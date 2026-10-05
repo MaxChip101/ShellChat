@@ -3,6 +3,7 @@ const log = std.log;
 const heap = std.heap;
 const mem = std.mem;
 
+const config_handler = @import("config_handler.zig");
 const server_handler = @import("server_handler.zig");
 const ssh_handler = @import("ssh_handler.zig");
 const sql_handler = @import("sql_handler.zig");
@@ -10,7 +11,6 @@ const tools = @import("tools.zig");
 
 const ssh = @import("ssh");
 const pg = @import("pg");
-const toml = @import("toml");
 
 pub fn main(init: std.process.Init) !void {
     const io = init.io;
@@ -21,6 +21,10 @@ pub fn main(init: std.process.Init) !void {
         const deinit_status = gpa.deinit();
         if (deinit_status == .leak) @panic("TEST FAIL");
     }
+
+    const settings = try config_handler.getSettings(allocator, io);
+    var server: server_handler.Server = .init(allocator, settings.title, settings.whitelist, settings.banlist);
+    defer server.deinit();
 
     _ = ssh.ssh_init();
     defer _ = ssh.ssh_finalize();
@@ -53,7 +57,7 @@ pub fn main(init: std.process.Init) !void {
         }
         log.info("client connection accepted", .{});
 
-        const thread = std.Thread.spawn(.{ .stack_size = 512 * 1024 }, handleClient, .{ allocator, session }) catch |err| {
+        const thread = std.Thread.spawn(.{ .stack_size = 512 * 1024 }, handleClient, .{ allocator, &server, session }) catch |err| {
             log.err("failed to spawn thread: {}", .{err});
             ssh.ssh_disconnect(session);
             ssh.ssh_free(session);
@@ -64,7 +68,7 @@ pub fn main(init: std.process.Init) !void {
     }
 }
 
-fn handleClient(allocator: mem.Allocator, session: ssh.ssh_session) !void {
+fn handleClient(allocator: mem.Allocator, server: *server_handler.Server, session: ssh.ssh_session) !void {
     defer {
         ssh.ssh_disconnect(session);
         ssh.ssh_free(session);
@@ -110,9 +114,24 @@ fn handleClient(allocator: mem.Allocator, session: ssh.ssh_session) !void {
 
                     if (ssh.ssh_get_publickey_hash(pubkey, ssh.SSH_PUBLICKEY_HASH_SHA256, &hash_ptr, &hash_len) == ssh.SSH_OK) {
                         defer ssh.ssh_clean_pubkey_hash(&hash_ptr);
-
                         @memcpy(&fingerprint, hash_ptr[0..32]);
                     }
+
+                    if (!server.isAuthenticClient(fingerprint)) {
+                        log.err("client is not whitelisted, public key: {x}", .{fingerprint});
+                        return error.ClientRejected;
+                    }
+
+                    const state = ssh.ssh_message_auth_publickey_state(msg);
+                    if (state == ssh.SSH_PUBLICKEY_STATE_NONE) {
+                        _ = ssh.ssh_message_auth_reply_pk_ok_simple(msg);
+                    } else if (state == ssh.SSH_PUBLICKEY_STATE_VALID) {
+                        _ = ssh.ssh_message_auth_reply_success(msg, 0);
+                        auth_success = true;
+                    } else {
+                        _ = ssh.ssh_message_reply_default(msg);
+                    }
+                    continue;
                 }
             }
 
@@ -160,9 +179,14 @@ fn handleClient(allocator: mem.Allocator, session: ssh.ssh_session) !void {
         }
     }
 
-    log.info("client connected: '{s}', fingerprint='{s}'", .{ username, fingerprint });
+    const client_id = try server.addClient(.{
+        .name = username,
+        .fingerprint = fingerprint,
+        .channel = channel,
+    });
+    defer server.removeClient(client_id) catch {};
 
-    try ssh_handler.channelPrint(allocator, channel, "hello '{s}',\r\nfingerprint='{s}'\r\nthis ssh server is in development to become something fun!\r\nright now this server will respond to what you type.\r\npress 'q' to disconnect.\r\n", .{ username, fingerprint });
+    log.info("client connected: '{s}', fingerprint='{x}'", .{ username, fingerprint });
 
     var buf: [1024]u8 = undefined;
 
