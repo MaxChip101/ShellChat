@@ -1,0 +1,24 @@
+.{
+    .name = .ssh_chat_server,
+    .version = "0.0.1",
+    .fingerprint = 0x1ad5bad9278b0447,
+    .minimum_zig_version = "0.16.0",
+    .dependencies = .{
+        .pg = .{
+            .url = "git+https://github.com/karlseguin/pg.zig#3eff324785b33ba5e9c223f4801d653dce103e95",
+            .hash = "pg-0.0.0-Wp_7gRgBBwDAlVwURrBmVcDmWXykxXHvjz0B-MMS3J4F",
+        },
+        .toml = .{
+            .url = "git+https://github.com/sam701/zig-toml?ref=zig-0.16#8685923e32e8b8a795eb2715684236975a70faed",
+            .hash = "toml-0.3.0-bV14BRmKAQAWR0FT0KUKFwVJTImaFhWjSe6HfSMtNZOH",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        // For example...
+        //"LICENSE",
+        //"README.md",
+    },
+}
