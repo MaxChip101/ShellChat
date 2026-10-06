@@ -33,12 +33,12 @@ pub fn main(init: std.process.Init) !void {
     const sshbind = ssh.ssh_bind_new() orelse return error.BindCreationFailure;
     defer ssh.ssh_bind_free(sshbind);
 
-    const host = "0.0.0.0";
-    const port: c_uint = 2222;
+    const host = settings.host;
+    const port: c_uint = @intCast(settings.port);
     const key = try tools.pathFromBinaryZ(io, allocator, "ssh_host_ed25519_key");
     defer allocator.free(key);
 
-    _ = ssh.ssh_bind_options_set(sshbind, ssh.SSH_BIND_OPTIONS_BINDADDR, host);
+    _ = ssh.ssh_bind_options_set(sshbind, ssh.SSH_BIND_OPTIONS_BINDADDR, host.ptr);
     _ = ssh.ssh_bind_options_set(sshbind, ssh.SSH_BIND_OPTIONS_BINDPORT, &port);
     _ = ssh.ssh_bind_options_set(sshbind, ssh.SSH_BIND_OPTIONS_HOSTKEY, key.ptr);
 
@@ -56,7 +56,7 @@ pub fn main(init: std.process.Init) !void {
             ssh.ssh_free(session);
             continue;
         }
-        log.info("client connection accepted", .{});
+        log.info("[CONNECT] client connection accepted", .{});
 
         const thread = std.Thread.spawn(.{ .stack_size = 512 * 1024 }, handleClient, .{ allocator, &server, session }) catch |err| {
             log.err("failed to spawn thread: {}", .{err});
@@ -76,7 +76,7 @@ fn handleClient(allocator: mem.Allocator, server: *server_handler.Server, sessio
     }
 
     if (ssh.ssh_handle_key_exchange(session) != ssh.SSH_OK) {
-        log.err("key exchange failed: {s}", .{ssh.ssh_get_error(session)});
+        log.err("[REJECT] key exchange failed: {s}", .{ssh.ssh_get_error(session)});
         return error.KeyExchangeFailed;
     }
 
@@ -119,7 +119,7 @@ fn handleClient(allocator: mem.Allocator, server: *server_handler.Server, sessio
                     }
 
                     if (!server.isAuthenticClient(.{ .username = username, .fingerprint = fingerprint, .channel = null })) {
-                        log.err("client is not whitelisted, username: {s}, fingerprint: {x}", .{ username, fingerprint });
+                        log.info("[REJECT] client is not whitelisted: {{username=\"{s}\",fingerprint=\"{x}\"}}", .{ username, fingerprint });
                         return error.ClientRejected;
                     }
 
@@ -187,7 +187,7 @@ fn handleClient(allocator: mem.Allocator, server: *server_handler.Server, sessio
     });
     defer server.removeClient(client_id) catch {};
 
-    log.info("client connected: '{s}', fingerprint='{x}'", .{ username, fingerprint });
+    log.info("[ACCEPT] client connected: {{username=\"{s}\",fingerprint=\"{x}\"}}", .{ username, fingerprint });
 
     var buf: [1024]u8 = undefined;
 
@@ -205,5 +205,5 @@ fn handleClient(allocator: mem.Allocator, server: *server_handler.Server, sessio
         try ssh_handler.channelPrint(allocator, channel, "read: {s}\r\n", .{input});
     }
 
-    log.info("client disconnected: {s}", .{username});
+    log.info("[DISCONNECT] client disconnected: {{username=\"{s}\",fingerprint=\"{x}\"}}", .{ username, fingerprint });
 }

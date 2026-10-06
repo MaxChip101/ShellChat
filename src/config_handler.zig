@@ -12,6 +12,8 @@ const toml = @import("toml");
 pub const ServerSettings = struct {
     title: []const u8,
     whitelist: []server_handler.Client,
+    host: []const u8,
+    port: u16,
 
     const Self = @This();
 
@@ -21,12 +23,15 @@ pub const ServerSettings = struct {
         }
         allocator.free(self.title);
         allocator.free(self.whitelist);
+        allocator.free(self.host);
     }
 };
 
 const Config = struct {
     title: []const u8,
     whitelisted_clients: []Client,
+    host: []const u8,
+    port: u16,
 };
 
 pub const Client = struct {
@@ -50,7 +55,7 @@ pub fn getSettings(allocator: mem.Allocator, io: Io) !ServerSettings {
     defer allocator.free(path);
 
     var result = parser.parseFile(io, path) catch |err| {
-        log.err("cannot find config.toml in binary directory", .{});
+        log.err("failed to parse or find config.toml in binary directory", .{});
         return err;
     };
     defer result.deinit();
@@ -74,5 +79,7 @@ pub fn getSettings(allocator: mem.Allocator, io: Io) !ServerSettings {
     return .{
         .title = try allocator.dupe(u8, config.title),
         .whitelist = try whitelist_list.toOwnedSlice(allocator),
+        .host = try allocator.dupe(u8, config.host),
+        .port = config.port,
     };
 }
