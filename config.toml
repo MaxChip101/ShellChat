@@ -1,6 +1,0 @@
-title = "chat_server"
-
-[whitelist]
-enabled = true
-allowed_clients = []
-banned_clients = []
