@@ -22,8 +22,9 @@ pub fn main(init: std.process.Init) !void {
         if (deinit_status == .leak) @panic("TEST FAIL");
     }
 
-    const settings = try config_handler.getSettings(allocator, io);
-    var server: server_handler.Server = .init(allocator, settings.title, settings.whitelist, settings.banlist);
+    var settings = try config_handler.getSettings(allocator, io);
+    defer settings.deinit(allocator);
+    var server: server_handler.Server = .init(allocator, settings.title, settings.whitelist);
     defer server.deinit();
 
     _ = ssh.ssh_init();
@@ -34,12 +35,12 @@ pub fn main(init: std.process.Init) !void {
 
     const host = "0.0.0.0";
     const port: c_uint = 2222;
-    const rsa_key = try tools.pathFromBinaryZ(io, allocator, "id_rsa");
-    defer allocator.free(rsa_key);
+    const key = try tools.pathFromBinaryZ(io, allocator, "ssh_host_ed25519_key");
+    defer allocator.free(key);
 
     _ = ssh.ssh_bind_options_set(sshbind, ssh.SSH_BIND_OPTIONS_BINDADDR, host);
     _ = ssh.ssh_bind_options_set(sshbind, ssh.SSH_BIND_OPTIONS_BINDPORT, &port);
-    _ = ssh.ssh_bind_options_set(sshbind, ssh.SSH_BIND_OPTIONS_RSAKEY, rsa_key.ptr);
+    _ = ssh.ssh_bind_options_set(sshbind, ssh.SSH_BIND_OPTIONS_HOSTKEY, key.ptr);
 
     if (ssh.ssh_bind_listen(sshbind) < 0) {
         log.err("error listening: {s}", .{ssh.ssh_get_error(sshbind)});
@@ -117,8 +118,8 @@ fn handleClient(allocator: mem.Allocator, server: *server_handler.Server, sessio
                         @memcpy(&fingerprint, hash_ptr[0..32]);
                     }
 
-                    if (!server.isAuthenticClient(fingerprint)) {
-                        log.err("client is not whitelisted, public key: {x}", .{fingerprint});
+                    if (!server.isAuthenticClient(.{ .username = username, .fingerprint = fingerprint, .channel = null })) {
+                        log.err("client is not whitelisted, username: {s}, fingerprint: {x}", .{ username, fingerprint });
                         return error.ClientRejected;
                     }
 
@@ -180,7 +181,7 @@ fn handleClient(allocator: mem.Allocator, server: *server_handler.Server, sessio
     }
 
     const client_id = try server.addClient(.{
-        .name = username,
+        .username = username,
         .fingerprint = fingerprint,
         .channel = channel,
     });

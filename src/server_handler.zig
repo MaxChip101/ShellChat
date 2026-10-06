@@ -9,14 +9,13 @@ const ssh = @import("ssh");
 pub const Server = struct {
     allocator: mem.Allocator,
     title: []const u8,
-    whitelist: ?[][32]u8,
-    banlist: [][32]u8,
+    whitelist: []Client,
     channels: std.AutoHashMap(u32, Channel),
     active_clients: tools.IDMap(Client),
 
     const Self = @This();
 
-    pub fn init(allocator: mem.Allocator, title: []const u8, whitelist: ?[][32]u8, banlist: [][32]u8) Self {
+    pub fn init(allocator: mem.Allocator, title: []const u8, whitelist: []Client) Self {
         const channels: std.AutoHashMap(u32, Channel) = .init(allocator);
         const active_clients: tools.IDMap(Client) = .init(allocator);
 
@@ -24,7 +23,6 @@ pub const Server = struct {
             .allocator = allocator,
             .title = title,
             .whitelist = whitelist,
-            .banlist = banlist,
             .channels = channels,
             .active_clients = active_clients,
         };
@@ -35,15 +33,9 @@ pub const Server = struct {
         self.active_clients.deinit();
     }
 
-    pub fn isAuthenticClient(self: *Self, fingerprint: [32]u8) bool {
-        for (self.banlist) |banned_fingerprint| {
-            if (mem.eql(u8, &banned_fingerprint, &fingerprint)) return false;
-        }
-
-        if (self.whitelist) |whitelist| {
-            for (whitelist) |valid_fingerprint| {
-                if (mem.eql(u8, &valid_fingerprint, &fingerprint)) return true;
-            }
+    pub fn isAuthenticClient(self: *Self, client: Client) bool {
+        for (self.whitelist) |valid_client| {
+            if (mem.eql(u8, &valid_client.fingerprint, &client.fingerprint) and mem.eql(u8, valid_client.username, client.username)) return true;
         }
         return false;
     }
@@ -58,7 +50,7 @@ pub const Server = struct {
 };
 
 pub const Channel = struct {
-    name: []const u8,
+    username: []const u8,
     type: u32,
 };
 
@@ -68,7 +60,7 @@ pub const WriteMethod = enum {
 };
 
 pub const Client = struct {
-    name: []const u8,
+    username: []const u8,
     fingerprint: [32]u8,
     channel: ssh.ssh_channel,
 

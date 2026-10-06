@@ -1,36 +1,48 @@
 const std = @import("std");
 const mem = std.mem;
 const log = std.log;
-const crypto = std.crypto;
+const fmt = std.fmt;
 const Io = std.Io;
 
 const tools = @import("tools.zig");
+const server_handler = @import("server_handler.zig");
 
 const toml = @import("toml");
 
-pub const ServerInitSettings = struct {
+pub const ServerSettings = struct {
     title: []const u8,
-    whitelist: [][32]u8,
+    whitelist: []server_handler.Client,
+
+    const Self = @This();
+
+    pub fn deinit(self: *Self, allocator: mem.Allocator) void {
+        for (self.whitelist) |client| {
+            allocator.free(client.username);
+        }
+        allocator.free(self.title);
+        allocator.free(self.whitelist);
+    }
 };
 
-pub const Config = struct {
+const Config = struct {
     title: []const u8,
     whitelisted_clients: []Client,
 };
 
 pub const Client = struct {
-    name: []const u8,
+    username: []const u8,
     fingerprint: []const u8,
 };
 
-fn parseHexFingerprint(fingerprint: []const u8) ![32]u8 {
-    if (fingerprint.len != 64) return error.InvalidFingerprint;
+fn parseFingerprint(hex: []const u8) ![32]u8 {
+    if (hex.len != 64) return error.InvalidLength;
+
     var out: [32]u8 = undefined;
-    _ = try std.fmt.hexToBytes(&out, fingerprint);
+    _ = try fmt.hexToBytes(&out, hex);
     return out;
 }
 
-pub fn getSettings(allocator: mem.Allocator, io: Io) !ServerInitSettings {
+pub fn getSettings(allocator: mem.Allocator, io: Io) !ServerSettings {
     var parser = toml.Parser(Config).init(allocator);
     defer parser.deinit();
 
@@ -45,22 +57,22 @@ pub fn getSettings(allocator: mem.Allocator, io: Io) !ServerInitSettings {
 
     const config = result.value;
 
-    var whitelist: ?[][32]u8 = null;
+    var whitelist_list: std.ArrayList(server_handler.Client) = .empty;
 
-    if (config.whitelist.enabled) {
-        var whitelist_list: std.ArrayList([32]u8) = .empty;
-        for (config.whitelisted_clients, 0..) |client, i| {
-            const fingerprint = getFingerprint(allocator, pub_key) catch |err| {
-                log.err("config.toml: whitelist.banned_clients[{d}] is not a valid public key", .{i});
-                return err;
-            };
-            try whitelist_list.append(allocator, fingerprint);
-        }
-        whitelist = try whitelist_list.toOwnedSlice(allocator);
+    for (config.whitelisted_clients, 0..) |client, i| {
+        const fingerprint = parseFingerprint(client.fingerprint) catch |err| {
+            log.err("config.toml: whitelisted_clients[{d}] is not a valid fingerprint", .{i});
+            return err;
+        };
+        try whitelist_list.append(allocator, .{
+            .username = try allocator.dupe(u8, client.username),
+            .fingerprint = fingerprint,
+            .channel = null,
+        });
     }
 
     return .{
-        .title = config.title,
-        .whitelist = whitelist,
+        .title = try allocator.dupe(u8, config.title),
+        .whitelist = try whitelist_list.toOwnedSlice(allocator),
     };
 }
