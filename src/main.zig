@@ -24,7 +24,7 @@ pub fn main(init: std.process.Init) !void {
 
     var settings = try config_handler.getSettings(allocator, io);
     defer settings.deinit(allocator);
-    var server: server_handler.Server = .init(allocator, settings.title, settings.whitelist);
+    var server: server_handler.Server = .init(allocator, settings.title, settings.whitelist, settings.channels);
     defer server.deinit();
 
     _ = ssh.ssh_init();
@@ -43,10 +43,10 @@ pub fn main(init: std.process.Init) !void {
     _ = ssh.ssh_bind_options_set(sshbind, ssh.SSH_BIND_OPTIONS_HOSTKEY, key.ptr);
 
     if (ssh.ssh_bind_listen(sshbind) < 0) {
-        log.err("error listening: {s}", .{ssh.ssh_get_error(sshbind)});
+        log.err("error listening on (host={s} port={d}): {s}", .{ host, port, ssh.ssh_get_error(sshbind) });
         return error.ListenFailure;
     }
-    log.info("ssh server listening on: {s}:{}", .{ host, port });
+    log.info("ssh server listening on: {s}:{d}", .{ host, port });
 
     while (true) {
         const session = ssh.ssh_new() orelse continue;
@@ -76,14 +76,14 @@ fn handleClient(allocator: mem.Allocator, server: *server_handler.Server, sessio
     }
 
     if (ssh.ssh_handle_key_exchange(session) != ssh.SSH_OK) {
-        log.err("[REJECT] key exchange failed: {s}", .{ssh.ssh_get_error(session)});
+        log.warn("[REJECT] key exchange failed: {s}", .{ssh.ssh_get_error(session)});
         return error.KeyExchangeFailed;
     }
 
     _ = ssh.ssh_set_auth_methods(session, ssh.SSH_AUTH_METHOD_PUBLICKEY);
 
     var u_buf: [32]u8 = undefined;
-    var username: []const u8 = "unkown";
+    var username: []const u8 = "unknown";
     var fingerprint: [32]u8 = undefined;
     var auth_success = false;
     while (!auth_success) {
@@ -118,8 +118,8 @@ fn handleClient(allocator: mem.Allocator, server: *server_handler.Server, sessio
                         @memcpy(&fingerprint, hash_ptr[0..32]);
                     }
 
-                    if (!server.isAuthenticClient(.{ .username = username, .fingerprint = fingerprint, .channel = null })) {
-                        log.info("[REJECT] client is not whitelisted: {{username=\"{s}\",fingerprint=\"{x}\"}}", .{ username, fingerprint });
+                    if (!server.isAuthenticClient(.{ .username = username, .fingerprint = fingerprint, .rank = 0, .channel = null })) {
+                        log.warn("[REJECT] client is not whitelisted, enter this into the config.toml to whitelist: {{username=\"{s}\",rank={d},fingerprint=\"{x}\"}}", .{ username, 0, fingerprint });
                         return error.ClientRejected;
                     }
 
@@ -180,14 +180,17 @@ fn handleClient(allocator: mem.Allocator, server: *server_handler.Server, sessio
         }
     }
 
+    const whitelist_user = server.whitelist.get(&fingerprint) orelse return error.ClientDoesNotExist;
+
     const client_id = try server.addClient(.{
         .username = username,
         .fingerprint = fingerprint,
         .channel = channel,
+        .rank = whitelist_user.rank,
     });
     defer server.removeClient(client_id) catch {};
 
-    log.info("[ACCEPT] client connected: {{username=\"{s}\",fingerprint=\"{x}\"}}", .{ username, fingerprint });
+    log.info("[ACCEPT] id={d} username=\"{s}\" fingerprint=\"{x}\"", .{ client_id, username, fingerprint });
 
     var buf: [1024]u8 = undefined;
 
@@ -205,5 +208,5 @@ fn handleClient(allocator: mem.Allocator, server: *server_handler.Server, sessio
         try ssh_handler.channelPrint(allocator, channel, "read: {s}\r\n", .{input});
     }
 
-    log.info("[DISCONNECT] client disconnected: {{username=\"{s}\",fingerprint=\"{x}\"}}", .{ username, fingerprint });
+    log.info("[DISCONNECT] id={d} username=\"{s}\" fingerprint=\"{x}\"", .{ client_id, username, fingerprint });
 }

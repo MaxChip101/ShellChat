@@ -9,14 +9,18 @@ const ssh = @import("ssh");
 pub const Server = struct {
     allocator: mem.Allocator,
     title: []const u8,
-    whitelist: []Client,
-    channels: std.AutoHashMap(u32, Channel),
+    whitelist: std.StringArrayHashMapUnmanaged(Client),
+    channels: std.StringArrayHashMapUnmanaged(Channel),
     active_clients: tools.IDMap(Client),
 
     const Self = @This();
 
-    pub fn init(allocator: mem.Allocator, title: []const u8, whitelist: []Client) Self {
-        const channels: std.AutoHashMap(u32, Channel) = .init(allocator);
+    pub fn init(
+        allocator: mem.Allocator,
+        title: []const u8,
+        whitelist: std.StringArrayHashMapUnmanaged(Client),
+        channels: std.StringArrayHashMapUnmanaged(Channel),
+    ) Self {
         const active_clients: tools.IDMap(Client) = .init(allocator);
 
         return .{
@@ -29,13 +33,12 @@ pub const Server = struct {
     }
 
     pub fn deinit(self: *Self) void {
-        self.channels.deinit();
         self.active_clients.deinit();
     }
 
     pub fn isAuthenticClient(self: *Self, client: Client) bool {
-        for (self.whitelist) |valid_client| {
-            if (mem.eql(u8, &valid_client.fingerprint, &client.fingerprint) and mem.eql(u8, valid_client.username, client.username)) return true;
+        if (self.whitelist.get(&client.fingerprint)) |valid_client| {
+            if (mem.eql(u8, valid_client.username, client.username)) return true;
         }
         return false;
     }
@@ -50,8 +53,8 @@ pub const Server = struct {
 };
 
 pub const Channel = struct {
-    name: []const u8,
     type: []const u8,
+    permissions: std.StringArrayHashMapUnmanaged(u8),
     // work on channels
 };
 
@@ -63,6 +66,7 @@ pub const WriteMethod = enum {
 pub const Client = struct {
     username: []const u8,
     fingerprint: [32]u8,
+    rank: u8,
     channel: ssh.ssh_channel,
 
     const Self = @This();
