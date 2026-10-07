@@ -50,8 +50,9 @@ pub const Server = struct {
 };
 
 pub const Channel = struct {
-    username: []const u8,
-    type: u32,
+    name: []const u8,
+    type: []const u8,
+    // work on channels
 };
 
 pub const WriteMethod = enum {

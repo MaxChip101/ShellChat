@@ -30,6 +30,10 @@ pub const ServerSettings = struct {
 const Config = struct {
     title: []const u8,
     whitelisted_clients: []Client,
+    network: Network,
+};
+
+const Network = struct {
     host: []const u8,
     port: u16,
 };
@@ -79,7 +83,7 @@ pub fn getSettings(allocator: mem.Allocator, io: Io) !ServerSettings {
     return .{
         .title = try allocator.dupe(u8, config.title),
         .whitelist = try whitelist_list.toOwnedSlice(allocator),
-        .host = try allocator.dupe(u8, config.host),
-        .port = config.port,
+        .host = try allocator.dupe(u8, config.network.host),
+        .port = config.network.port,
     };
 }
