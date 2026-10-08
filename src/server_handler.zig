@@ -12,6 +12,7 @@ pub const Server = struct {
     whitelist: std.StringArrayHashMapUnmanaged(Client),
     channels: std.StringArrayHashMapUnmanaged(Channel),
     active_clients: tools.IDMap(Client),
+    command_registery: std.StringArrayHashMapUnmanaged(i32), // lua function callback values
 
     const Self = @This();
 
@@ -22,6 +23,7 @@ pub const Server = struct {
         channels: std.StringArrayHashMapUnmanaged(Channel),
     ) Self {
         const active_clients: tools.IDMap(Client) = .init(allocator);
+        const command_registery: std.StringArrayHashMapUnmanaged(i32) = .empty;
 
         return .{
             .allocator = allocator,
@@ -29,11 +31,13 @@ pub const Server = struct {
             .whitelist = whitelist,
             .channels = channels,
             .active_clients = active_clients,
+            .command_registery = command_registery,
         };
     }
 
     pub fn deinit(self: *Self) void {
         self.active_clients.deinit();
+        self.command_registery.deinit(self.allocator);
     }
 
     pub fn isAuthenticClient(self: *Self, client: Client) bool {
@@ -41,6 +45,10 @@ pub const Server = struct {
             if (mem.eql(u8, valid_client.username, client.username)) return true;
         }
         return false;
+    }
+
+    pub fn addCommand(self: *Self, command_name: []const u8, lua_callback: i32) !void {
+        try self.*.command_registery.put(self.allocator, command_name, lua_callback);
     }
 
     pub fn addClient(self: *Self, client: Client) !u32 {
@@ -55,7 +63,6 @@ pub const Server = struct {
 pub const Channel = struct {
     type: []const u8,
     permissions: std.StringArrayHashMapUnmanaged(u8),
-    // work on channels
 };
 
 pub const WriteMethod = enum {
@@ -63,11 +70,18 @@ pub const WriteMethod = enum {
     StdOut,
 };
 
+pub const ClientMode = enum {
+    Normal,
+    Focused,
+};
+
 pub const Client = struct {
     username: []const u8,
     fingerprint: [32]u8,
-    rank: u8,
-    channel: ssh.ssh_channel,
+    rank: u8 = 0,
+    mode: ClientMode = .Normal,
+    focused_channel: ?[]const u8 = null,
+    channel: ssh.ssh_channel = null,
 
     const Self = @This();
 

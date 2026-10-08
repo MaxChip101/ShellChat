@@ -93,7 +93,6 @@ pub fn getSettings(allocator: mem.Allocator, io: Io) !ServerSettings {
             .username = try allocator.dupe(u8, client.username),
             .fingerprint = fingerprint,
             .rank = client.rank,
-            .channel = null,
         });
     }
 

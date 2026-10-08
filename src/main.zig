@@ -2,6 +2,8 @@ const std = @import("std");
 const log = std.log;
 const heap = std.heap;
 const mem = std.mem;
+const atomic = std.atomic;
+const posix = std.posix;
 
 const config_handler = @import("config_handler.zig");
 const server_handler = @import("server_handler.zig");
@@ -12,8 +14,23 @@ const tools = @import("tools.zig");
 const ssh = @import("ssh");
 const pg = @import("pg");
 
+var running: atomic.Value(bool) = .init(true);
+
+fn handleSignal(_: posix.SIG) callconv(.c) void {
+    running.store(false, .release);
+}
+
 pub fn main(init: std.process.Init) !void {
     const io = init.io;
+
+    const act = posix.Sigaction{
+        .handler = .{ .handler = handleSignal },
+        .mask = mem.zeroes(posix.sigset_t),
+        .flags = 0,
+    };
+
+    posix.sigaction(posix.SIG.INT, &act, null);
+    posix.sigaction(posix.SIG.TERM, &act, null);
 
     var gpa = heap.DebugAllocator(.{ .thread_safe = true }){};
     const allocator = gpa.allocator();
@@ -48,7 +65,7 @@ pub fn main(init: std.process.Init) !void {
     }
     log.info("ssh server listening on: {s}:{d}", .{ host, port });
 
-    while (true) {
+    while (running.load(.acquire)) {
         const session = ssh.ssh_new() orelse continue;
 
         if (ssh.ssh_bind_accept(sshbind, session) == ssh.SSH_ERROR) {
@@ -56,7 +73,7 @@ pub fn main(init: std.process.Init) !void {
             ssh.ssh_free(session);
             continue;
         }
-        log.info("[CONNECT] client connection accepted", .{});
+        log.debug("[CONNECT] client connection accepted", .{});
 
         const thread = std.Thread.spawn(.{ .stack_size = 512 * 1024 }, handleClient, .{ allocator, &server, session }) catch |err| {
             log.err("failed to spawn thread: {}", .{err});
@@ -67,6 +84,7 @@ pub fn main(init: std.process.Init) !void {
 
         thread.detach();
     }
+    log.info("[STOP] server closed successfully", .{});
 }
 
 fn handleClient(allocator: mem.Allocator, server: *server_handler.Server, session: ssh.ssh_session) !void {
