@@ -6,7 +6,8 @@ const server_handler = @import("server_handler.zig");
 
 const zlua = @import("lua");
 
-pub fn runCommand(allocator: mem.Allocator, client_id: u32, server: *server_handler.Server, command_str: []const u8) !void {
+pub fn runCommand(allocator: mem.Allocator, client_id: u32, server: *server_handler.Server, command_str: []const u8) !bool {
+    var user = server.active_clients.get(client_id) orelse return error.InvalidClient;
 
     // get command and args
     var it = mem.splitScalar(u8, command_str, ' ');
@@ -18,8 +19,8 @@ pub fn runCommand(allocator: mem.Allocator, client_id: u32, server: *server_hand
     const args = args_list.items;
 
     const callback = server.command_registery.get(command) orelse {
-        log.err("Command: \'{s}\' doesn't exist", .{command}); // make this a client side error
-        return error.NonExistentCommand;
+        try user.printTo(.StdErr, allocator, "Command: \'{s}\' does not exist\r\n", .{command});
+        return false;
     };
 
     const lua = server.lua;
@@ -39,7 +40,9 @@ pub fn runCommand(allocator: mem.Allocator, client_id: u32, server: *server_hand
     lua.protectedCall(.{ .args = 3, .results = 0 }) catch |err| {
         const err_msg = lua.toString(-1) catch "Unknown Lua error";
         log.err("Command had an error while executing \'{s}\': {s}, {}", .{ command, err_msg, err });
-        // tell client
+        try user.printTo(.StdErr, allocator, "Command had an error while executing \'{s}\': {s}, {}\r\n", .{ command, err_msg, err });
         lua.pop(1);
+        return false;
     };
+    return true;
 }

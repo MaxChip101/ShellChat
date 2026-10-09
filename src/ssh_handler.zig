@@ -58,12 +58,12 @@ pub fn channelPrintErr(allocator: mem.Allocator, channel: ssh.ssh_channel, compt
     _ = try channelWriteAllErr(channel, formatted);
 }
 
-pub fn channelPrintBuf(buf: []u8, channel: ssh.shh_channel, comptime format: []const u8, args: anytype) !void {
+pub fn channelPrintBuf(buf: []u8, channel: ssh.ssh_channel, comptime format: []const u8, args: anytype) !void {
     const formatted = try fmt.bufPrint(buf, format, args);
     _ = try channelWriteAll(channel, formatted);
 }
 
-pub fn channelPrintBufErr(buf: []u8, channel: ssh.shh_channel, comptime format: []const u8, args: anytype) !void {
+pub fn channelPrintBufErr(buf: []u8, channel: ssh.ssh_channel, comptime format: []const u8, args: anytype) !void {
     const formatted = try fmt.bufPrint(buf, format, args);
     _ = try channelWriteAllErr(channel, formatted);
 }

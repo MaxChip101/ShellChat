@@ -262,7 +262,11 @@ fn handleClient(allocator: mem.Allocator, server: *server_handler.Server, sessio
         }
 
         if (mem.eql(u8, input, "w")) {
-            try commands.runCommand(allocator, client_id, server, "/test");
+            _ = try commands.runCommand(allocator, client_id, server, "/teste");
+        }
+
+        if (mem.eql(u8, input, "r")) {
+            _ = try commands.runCommand(allocator, client_id, server, "/test");
         }
 
         try ssh_handler.channelPrint(allocator, channel, "read: {s}\r\n", .{input});
