@@ -26,6 +26,7 @@
             packages = with pkgs; [
               zig_0_16
               zls_0_16 # for lsp
+              glibc.dev
               pkg-config
               libssh
               postgresql

@@ -5,45 +5,44 @@ const ssh_handler = @import("ssh_handler.zig");
 const tools = @import("tools.zig");
 
 const ssh = @import("ssh");
+const zlua = @import("lua");
 
 pub const Server = struct {
     allocator: mem.Allocator,
-    title: []const u8,
-    whitelist: std.StringArrayHashMapUnmanaged(Client),
-    channels: std.StringArrayHashMapUnmanaged(Channel),
-    active_clients: tools.IDMap(Client),
+    // replace with db
+    //whitelist: std.StringArrayHashMapUnmanaged(Client),
+    //channels: std.StringArrayHashMapUnmanaged(Channel),
+    active_clients: std.AutoHashMap(u32, Client),
     command_registery: std.StringArrayHashMapUnmanaged(i32), // lua function callback values
+    lua: *zlua.Lua,
 
     const Self = @This();
 
-    pub fn init(
-        allocator: mem.Allocator,
-        title: []const u8,
-        whitelist: std.StringArrayHashMapUnmanaged(Client),
-        channels: std.StringArrayHashMapUnmanaged(Channel),
-    ) Self {
-        const active_clients: tools.IDMap(Client) = .init(allocator);
+    pub fn init(allocator: mem.Allocator, lua: *zlua.Lua) Self {
+        const active_clients: std.AutoHashMap(u32, Client) = .init(allocator);
         const command_registery: std.StringArrayHashMapUnmanaged(i32) = .empty;
 
         return .{
             .allocator = allocator,
-            .title = title,
-            .whitelist = whitelist,
-            .channels = channels,
             .active_clients = active_clients,
             .command_registery = command_registery,
+            .lua = lua,
         };
     }
 
     pub fn deinit(self: *Self) void {
+        for (self.command_registery.keys()) |key| {
+            self.allocator.free(key);
+        }
+
         self.active_clients.deinit();
         self.command_registery.deinit(self.allocator);
     }
 
-    pub fn isAuthenticClient(self: *Self, client: Client) bool {
-        if (self.whitelist.get(&client.fingerprint)) |valid_client| {
-            if (mem.eql(u8, valid_client.username, client.username)) return true;
-        }
+    pub fn isAuthenticClient(self: *Self, fingerprint: [32]u8) bool {
+        _ = self;
+        const valid_fingerprint = fingerprint; // get from database
+        if (mem.eql(u8, &valid_fingerprint, &fingerprint)) return true;
         return false;
     }
 
@@ -51,18 +50,13 @@ pub const Server = struct {
         try self.*.command_registery.put(self.allocator, command_name, lua_callback);
     }
 
-    pub fn addClient(self: *Self, client: Client) !u32 {
-        return try self.*.active_clients.create(client);
+    pub fn addClient(self: *Self, client: Client) !void {
+        try self.*.active_clients.put(client.id, client);
     }
 
     pub fn removeClient(self: *Self, id: u32) !void {
-        return try self.*.active_clients.delete(id);
+        _ = self.*.active_clients.remove(id);
     }
-};
-
-pub const Channel = struct {
-    type: []const u8,
-    permissions: std.StringArrayHashMapUnmanaged(u8),
 };
 
 pub const WriteMethod = enum {
@@ -76,12 +70,10 @@ pub const ClientMode = enum {
 };
 
 pub const Client = struct {
-    username: []const u8,
-    fingerprint: [32]u8,
-    rank: u8 = 0,
+    id: u32, // postgresql database client id
     mode: ClientMode = .Normal,
     focused_channel: ?[]const u8 = null,
-    channel: ssh.ssh_channel = null,
+    channel: ssh.ssh_channel,
 
     const Self = @This();
 

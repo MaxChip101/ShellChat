@@ -1,21 +1,15 @@
 mkdir bin
-touch bin/config.toml
-printf "title=\"chat_server\"
-host=\"0.0.0.0\" # open to all addresses
-port=2222 # default port
-whitelisted_clients=[] # {username=\"username\",rank=0,fingerprint=\"fingerprint\"} # rank is a number between 0-255
+touch bin/init.lua
+printf "server.title = "chat_server"
+server.host = \"0.0.0.0\" -- open to all addresses
+server.port = 2222 -- default port
 
-channels = [
-    {
-        name=\"general\",
-        type=\"chat\",
-        permissions=[
-            {name=\"view\",rank=0},
-            {name=\"chat\",rank=25},
-            {name=\"edit\",rank=50},
-            {name=\"manage\",rank=200},
-        ]
-    }
-]
+function test(client_id, command, args)
+    _ = client_id
+    _ = args
+    print(\"test done\")
+    print(command)
+end
 
-" > bin/config.toml
+server.registerCommand(\"/test\", test)
+" > bin/init.lua

@@ -8,10 +8,6 @@
             .url = "git+https://github.com/karlseguin/pg.zig?ref=zig-0.16.0#2e08f9817aacff1ad93531ec182ee9cc69f5bda5",
             .hash = "pg-0.0.0-Wp_7gTEVBwB8CsFe-rh8enfPHKrfA3oapKLIRoPbKUDx",
         },
-        .toml = .{
-            .url = "git+https://github.com/sam701/zig-toml?ref=zig-0.16#8685923e32e8b8a795eb2715684236975a70faed",
-            .hash = "toml-0.3.0-bV14BRmKAQAWR0FT0KUKFwVJTImaFhWjSe6HfSMtNZOH",
-        },
         .zlua = .{
             .url = "https://github.com/natecraddock/ziglua/archive/refs/tags/0.7.0.tar.gz",
             .hash = "zlua-0.1.0-hGRpC1mUBQCNQf4CnmRTM4I7gxE3YpCvZ-p2EarlcyER",

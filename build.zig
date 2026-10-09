@@ -13,30 +13,19 @@ pub fn build(b: *std.Build) void {
 
     const ssh_inc = std.mem.trim(u8, b.run(&.{ "pkg-config", "--variable=includedir", "libssh" }), " \n\r\t");
 
-    // const pq_c = b.addTranslateC(.{
-    //     .root_source_file = b.path("src/pq.h"),
-    //     .target = target,
-    //     .optimize = optimize,
-    //     .link_libc = true,
-    // });
-
-    // const pq_inc = std.mem.trim(u8, b.run(&.{ "pkg-config", "--variable=includedir", "libpq" }), " \n\r\t");
-
     ssh_c.addSystemIncludePath(.{ .cwd_relative = ssh_inc });
-    // pq_c.addSystemIncludePath(.{ .cwd_relative = pq_inc });
 
     const libssh_mod = ssh_c.createModule();
-    // const libpq_mod = pq_c.createModule();
 
     const pg_mod = b.dependency("pg", .{
         .target = target,
         .optimize = optimize,
     }).module("pg");
 
-    const toml_mod = b.dependency("toml", .{
+    const lua_mod = b.dependency("zlua", .{
         .target = target,
         .optimize = optimize,
-    }).module("toml");
+    }).module("zlua");
 
     const exe = b.addExecutable(.{
         .name = "ssh_server",
@@ -48,14 +37,10 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
-    exe.root_module.addImport("ssh", libssh_mod);
-    // exe.root_module.addImport("pq", libpq_mod);
-
     exe.root_module.linkSystemLibrary("ssh", .{});
-    // exe.root_module.linkSystemLibrary("pq", .{});
-
+    exe.root_module.addImport("ssh", libssh_mod);
     exe.root_module.addImport("pg", pg_mod);
-    exe.root_module.addImport("toml", toml_mod);
+    exe.root_module.addImport("lua", lua_mod);
 
     b.installArtifact(exe);
     const run_cmd = b.addRunArtifact(exe);

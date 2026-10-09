@@ -5,14 +5,16 @@ const mem = std.mem;
 const atomic = std.atomic;
 const posix = std.posix;
 
-const config_handler = @import("config_handler.zig");
+const commands = @import("commands.zig");
 const server_handler = @import("server_handler.zig");
 const ssh_handler = @import("ssh_handler.zig");
 const sql_handler = @import("sql_handler.zig");
+const lua_handler = @import("lua_handler.zig");
 const tools = @import("tools.zig");
 
 const ssh = @import("ssh");
 const pg = @import("pg");
+const zlua = @import("lua");
 
 var running: atomic.Value(bool) = .init(true);
 
@@ -39,10 +41,50 @@ pub fn main(init: std.process.Init) !void {
         if (deinit_status == .leak) @panic("TEST FAIL");
     }
 
-    var settings = try config_handler.getSettings(allocator, io);
-    defer settings.deinit(allocator);
-    var server: server_handler.Server = .init(allocator, settings.title, settings.whitelist, settings.channels);
+    const lua = try zlua.Lua.init(allocator);
+    defer lua.deinit();
+    lua.openLibs();
+
+    lua.newLib(&lua_handler.lib_funcs);
+    lua.setGlobal(lua_handler.lib_name);
+
+    var server: server_handler.Server = .init(allocator, lua);
     defer server.deinit();
+
+    lua.pushLightUserdata(@ptrCast(&server));
+    lua.setField(zlua.registry_index, "SERVER");
+
+    const script = try tools.pathFromBinaryZ(io, allocator, "init.lua");
+    defer allocator.free(script);
+
+    lua.doFile(script) catch {
+        const err_msg = lua.toString(-1) catch "unkown error";
+        log.err("[LUA] {s}", .{err_msg});
+        lua.pop(1);
+        return error.LuaRuntime;
+    };
+
+    _ = lua.getGlobal(lua_handler.lib_name);
+
+    _ = lua.getField(-1, "host");
+    const raw_host = if (lua.isString(-1))
+        lua_handler.pullString(lua, -1)
+    else
+        "127.0.0.0";
+
+    const host = try allocator.dupe(u8, raw_host);
+    defer allocator.free(host);
+    lua.pop(1);
+
+    _ = lua.getField(-1, "port");
+    const raw_port = if (lua.isInteger(-1))
+        lua_handler.pullUInt(lua, -1)
+    else
+        2222;
+
+    const port: c_uint = @intCast(raw_port);
+    lua.pop(1);
+    lua.pop(1);
 
     _ = ssh.ssh_init();
     defer _ = ssh.ssh_finalize();
@@ -50,8 +92,6 @@ pub fn main(init: std.process.Init) !void {
     const sshbind = ssh.ssh_bind_new() orelse return error.BindCreationFailure;
     defer ssh.ssh_bind_free(sshbind);
 
-    const host = settings.host;
-    const port: c_uint = @intCast(settings.port);
     const key = try tools.pathFromBinaryZ(io, allocator, "ssh_host_ed25519_key");
     defer allocator.free(key);
 
@@ -136,7 +176,7 @@ fn handleClient(allocator: mem.Allocator, server: *server_handler.Server, sessio
                         @memcpy(&fingerprint, hash_ptr[0..32]);
                     }
 
-                    if (!server.isAuthenticClient(.{ .username = username, .fingerprint = fingerprint, .rank = 0, .channel = null })) {
+                    if (!server.isAuthenticClient(fingerprint)) {
                         log.warn("[REJECT] client is not whitelisted, enter this into the config.toml to whitelist: {{username=\"{s}\",rank={d},fingerprint=\"{x}\"}}", .{ username, 0, fingerprint });
                         return error.ClientRejected;
                     }
@@ -198,13 +238,11 @@ fn handleClient(allocator: mem.Allocator, server: *server_handler.Server, sessio
         }
     }
 
-    const whitelist_user = server.whitelist.get(&fingerprint) orelse return error.ClientDoesNotExist;
+    const client_id = 0;
 
-    const client_id = try server.addClient(.{
-        .username = username,
-        .fingerprint = fingerprint,
+    try server.addClient(.{
+        .id = client_id, // get this from database
         .channel = channel,
-        .rank = whitelist_user.rank,
     });
     defer server.removeClient(client_id) catch {};
 
@@ -221,6 +259,10 @@ fn handleClient(allocator: mem.Allocator, server: *server_handler.Server, sessio
         if (std.mem.eql(u8, input, "q") or std.mem.eql(u8, input, "q\r") or std.mem.eql(u8, input, "q\r\n")) {
             try ssh_handler.channelWriteAll(channel, "disconnecting...\r\n");
             break;
+        }
+
+        if (mem.eql(u8, input, "w")) {
+            try commands.runCommand(allocator, client_id, server, "/test");
         }
 
         try ssh_handler.channelPrint(allocator, channel, "read: {s}\r\n", .{input});
