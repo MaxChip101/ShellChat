@@ -177,7 +177,7 @@ fn handleClient(allocator: mem.Allocator, server: *server_handler.Server, sessio
                     }
 
                     if (!server.isAuthenticClient(fingerprint)) {
-                        log.warn("[REJECT] client is not whitelisted, enter this into the config.toml to whitelist: {{username=\"{s}\",rank={d},fingerprint=\"{x}\"}}", .{ username, 0, fingerprint });
+                        log.warn("[REJECT] client is not whitelisted: fingerprint=\"{x}\"", .{ username, 0, fingerprint });
                         return error.ClientRejected;
                     }
 
@@ -248,13 +248,13 @@ fn handleClient(allocator: mem.Allocator, server: *server_handler.Server, sessio
 
     log.info("[ACCEPT] id={d} username=\"{s}\" fingerprint=\"{x}\"", .{ client_id, username, fingerprint });
 
-    var buf: [1024]u8 = undefined;
+    var input_buf: [1024]u8 = undefined;
 
     while (true) {
-        const bytes_read = ssh.channel_read(channel, &buf, @intCast(buf.len), 0);
+        const bytes_read = ssh.channel_read(channel, &input_buf, @intCast(input_buf.len), 0);
         if (bytes_read <= 0) break;
 
-        const input = buf[0..@intCast(bytes_read)];
+        const input = input_buf[0..@intCast(bytes_read)];
 
         if (std.mem.eql(u8, input, "q") or std.mem.eql(u8, input, "q\r") or std.mem.eql(u8, input, "q\r\n")) {
             try ssh_handler.channelWriteAll(channel, "disconnecting...\r\n");
