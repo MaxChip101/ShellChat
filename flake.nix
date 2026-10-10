@@ -31,6 +31,20 @@
               libssh
               postgresql
             ];
+
+            shellHook = ''
+              export PGDATA="$PWD/.pg_data"
+              export PGHOST="$PWD/.pg_socket"
+
+              if [ ! -d "$PGDATA" ]; then
+                mkdir -p "$PGHOST"
+                initdb -D "$PGDATA"
+                echo "local all all trust" > "$PGDATA/pg_hba.conf"
+              fi
+
+              pg_ctl -D "$PGDATA" -o "-k $PGHOST" start
+              echo "postgresql started"
+            '';
           };
         }
       );

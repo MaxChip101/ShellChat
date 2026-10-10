@@ -6,9 +6,11 @@ const tools = @import("tools.zig");
 
 const ssh = @import("ssh");
 const zlua = @import("lua");
+const pg = @import("pg");
 
 pub const Server = struct {
     allocator: mem.Allocator,
+    pool: *pg.Pool,
     // replace with db
     //whitelist: std.StringArrayHashMapUnmanaged(Client),
     //channels: std.StringArrayHashMapUnmanaged(Channel),
@@ -18,7 +20,7 @@ pub const Server = struct {
 
     const Self = @This();
 
-    pub fn init(allocator: mem.Allocator, lua: *zlua.Lua) Self {
+    pub fn init(allocator: mem.Allocator, lua: *zlua.Lua, pool: *pg.Pool) Self {
         const active_clients: std.AutoHashMap(u32, Client) = .init(allocator);
         const command_registery: std.StringArrayHashMapUnmanaged(i32) = .empty;
 
@@ -27,6 +29,7 @@ pub const Server = struct {
             .active_clients = active_clients,
             .command_registery = command_registery,
             .lua = lua,
+            .pool = pool,
         };
     }
 

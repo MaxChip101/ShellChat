@@ -11,3 +11,4 @@ end
 
 server.registerCommand(\"/test\", test)
 " > bin/init.lua
+echo "lua config created"

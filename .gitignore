@@ -1,3 +1,5 @@
 /.zig-cache
 /bin
 /zig-pkg
+.pg_data
+.pg_socket

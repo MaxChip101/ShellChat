@@ -4,6 +4,7 @@ const heap = std.heap;
 const mem = std.mem;
 const atomic = std.atomic;
 const posix = std.posix;
+const process = std.process;
 
 const commands = @import("commands.zig");
 const server_handler = @import("server_handler.zig");
@@ -22,7 +23,7 @@ fn handleSignal(_: posix.SIG) callconv(.c) void {
     running.store(false, .release);
 }
 
-pub fn main(init: std.process.Init) !void {
+pub fn main(init: process.Init) !void {
     const io = init.io;
 
     const act = posix.Sigaction{
@@ -40,6 +41,24 @@ pub fn main(init: std.process.Init) !void {
         const deinit_status = gpa.deinit();
         if (deinit_status == .leak) @panic("TEST FAIL");
     }
+
+    const pg_host = init.environ_map.get("PGHOST") orelse "localhost";
+    const db_name = init.environ_map.get("DB_NAME") orelse "chat_server";
+
+    var pool: pg.Pool = .init(io, allocator, .{
+        .size = 4,
+        .connect = .{
+            .host = pg_host,
+            .port = 5432,
+        },
+        .auth = .{
+            .username = "postgres",
+            .database = db_name,
+            .password = "",
+            .timeout = 10_000,
+        },
+    });
+    defer pool.deinit();
 
     const lua = try zlua.Lua.init(allocator);
     defer lua.deinit();
