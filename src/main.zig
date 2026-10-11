@@ -42,19 +42,27 @@ pub fn main(init: process.Init) !void {
         if (deinit_status == .leak) @panic("TEST FAIL");
     }
 
-    const pg_host = init.environ_map.get("PGHOST") orelse "localhost";
+    const pg_user = init.environ_map.get("PGUSER") orelse
+        init.environ_map.get("USER") orelse "postgres";
+    const pg_pass = init.environ_map.get("PGPASSWORD") orelse "";
+    const pg_host_env = init.environ_map.get("PGHOST") orelse "localhost";
+    const pg_host = if (mem.startsWith(u8, pg_host_env, "/"))
+        try std.fmt.allocPrint(allocator, "{s}/.s.PGSQL.5432", .{pg_host_env})
+    else
+        pg_host_env;
+    defer if (pg_host.ptr != pg_host_env.ptr) allocator.free(pg_host);
     const db_name = init.environ_map.get("DB_NAME") orelse "chat_server";
 
-    var pool: pg.Pool = .init(io, allocator, .{
+    var pool: *pg.Pool = try .init(io, allocator, .{
         .size = 4,
         .connect = .{
             .host = pg_host,
             .port = 5432,
         },
         .auth = .{
-            .username = "postgres",
+            .username = pg_user,
             .database = db_name,
-            .password = "",
+            .password = pg_pass,
             .timeout = 10_000,
         },
     });
@@ -67,7 +75,7 @@ pub fn main(init: process.Init) !void {
     lua.newLib(&lua_handler.lib_funcs);
     lua.setGlobal(lua_handler.lib_name);
 
-    var server: server_handler.Server = .init(allocator, lua);
+    var server: server_handler.Server = .init(allocator, lua, pool);
     defer server.deinit();
 
     lua.pushLightUserdata(@ptrCast(&server));
@@ -196,7 +204,7 @@ fn handleClient(allocator: mem.Allocator, server: *server_handler.Server, sessio
                     }
 
                     if (!server.isAuthenticClient(fingerprint)) {
-                        log.warn("[REJECT] client is not whitelisted: fingerprint=\"{x}\"", .{ username, 0, fingerprint });
+                        log.warn("[REJECT] client is not whitelisted: fingerprint=\"{x}\"", .{fingerprint});
                         return error.ClientRejected;
                     }
 

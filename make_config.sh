@@ -1,6 +1,6 @@
 mkdir bin
 touch bin/init.lua
-printf "server.title = "chat_server"
+printf "server.title = \"chat_server\"
 server.host = \"0.0.0.0\" -- open to all addresses
 server.port = 2222 -- default port
 
