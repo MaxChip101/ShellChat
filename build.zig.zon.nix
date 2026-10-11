@@ -78,7 +78,7 @@ linkFarm "zig-packages" [
   {
     name = "pg-0.0.0-Wp_7gTEVBwB8CsFe-rh8enfPHKrfA3oapKLIRoPbKUDx";
     path = fetchgit {
-      url = "https://github.com/karlseguin/pg.zig?ref=zig-0.16.0";
+      url = "https://github.com/karlseguin/pg.zig";
       rev = "2e08f9817aacff1ad93531ec182ee9cc69f5bda5";
       hash = "sha256-JVHG1UHH1TryvYoCOcECCZ82BgNmy6PF/H4DuCXAAyY=";
     };

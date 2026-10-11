@@ -5,7 +5,7 @@
     .minimum_zig_version = "0.16.0",
     .dependencies = .{
         .pg = .{
-            .url = "git+https://github.com/karlseguin/pg.zig?ref=zig-0.16.0#2e08f9817aacff1ad93531ec182ee9cc69f5bda5",
+            .url = "git+https://github.com/karlseguin/pg.zig#2e08f9817aacff1ad93531ec182ee9cc69f5bda5",
             .hash = "pg-0.0.0-Wp_7gTEVBwB8CsFe-rh8enfPHKrfA3oapKLIRoPbKUDx",
         },
         .zlua = .{
