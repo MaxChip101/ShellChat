@@ -1,0 +1,22 @@
+2026-10-11 10:58:38.362 MDT [2778] LOG:  starting PostgreSQL 18.6 on x86_64-pc-linux-gnu, compiled by clang version 21.1.8, 64-bit
+2026-10-11 10:58:38.363 MDT [2778] LOG:  listening on Unix socket "/home/maxchip/code/zig/ssh_chat_server/.pg_socket/.s.PGSQL.5432"
+2026-10-11 10:58:38.370 MDT [2784] LOG:  database system was shut down at 2026-10-10 23:52:31 MDT
+2026-10-11 10:58:38.375 MDT [2778] LOG:  database system is ready to accept connections
+2026-10-11 11:03:38.370 MDT [2782] LOG:  checkpoint starting: time
+2026-10-11 11:03:43.015 MDT [2782] LOG:  checkpoint complete: wrote 46 buffers (0.3%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=4.628 s, sync=0.005 s, total=4.646 s; sync files=38, longest=0.002 s, average=0.001 s; distance=261 kB, estimate=261 kB; lsn=0/1C88DE0, redo lsn=0/1C88D88
+2026-10-11 21:52:30.959 MDT [2782] LOG:  checkpoint starting: immediate force wait
+2026-10-11 21:52:30.963 MDT [2782] LOG:  checkpoint complete: wrote 1 buffers (0.0%), wrote 0 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.001 s, sync=0.001 s, total=0.004 s; sync files=1, longest=0.001 s, average=0.001 s; distance=1 kB, estimate=235 kB; lsn=0/1C89290, redo lsn=0/1C89238
+2026-10-11 21:57:30.963 MDT [2782] LOG:  checkpoint starting: time
+2026-10-11 21:59:06.957 MDT [2782] LOG:  checkpoint complete: wrote 960 buffers (5.9%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 1 recycled; write=95.955 s, sync=0.025 s, total=95.994 s; sync files=312, longest=0.001 s, average=0.001 s; distance=4417 kB, estimate=4417 kB; lsn=0/20D9908, redo lsn=0/20D9878
+2026-10-11 22:20:47.495 MDT [15441] ERROR:  duplicate key value violates unique constraint "whitelist_fingerprint_key"
+2026-10-11 22:20:47.495 MDT [15441] DETAIL:  Key (fingerprint)=(\x8946039a3f9ddbdd66280ab5510defcf7dd8210db9b796a2a440f0a9f6db184f) already exists.
+2026-10-11 22:20:47.495 MDT [15441] STATEMENT:  INSERT INTO whitelist (fingerprint, rank) VALUES ($1, $2)
+2026-10-11 22:22:30.957 MDT [2782] LOG:  checkpoint starting: time
+2026-10-11 22:22:32.284 MDT [2782] LOG:  checkpoint complete: wrote 13 buffers (0.1%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=1.302 s, sync=0.012 s, total=1.327 s; sync files=10, longest=0.011 s, average=0.002 s; distance=34 kB, estimate=3979 kB; lsn=0/20E2390, redo lsn=0/20E2338
+2026-10-11 22:22:53.532 MDT [15640] ERROR:  duplicate key value violates unique constraint "whitelist_fingerprint_key"
+2026-10-11 22:22:53.532 MDT [15640] DETAIL:  Key (fingerprint)=(\x8946039a3f9ddbdd66280ab5510defcf7dd8210db9b796a2a440f0a9f6db184f) already exists.
+2026-10-11 22:22:53.532 MDT [15640] STATEMENT:  INSERT INTO whitelist (fingerprint, rank) VALUES ($1, $2)
+2026-10-11 22:27:30.284 MDT [2782] LOG:  checkpoint starting: time
+2026-10-11 22:27:30.609 MDT [2782] LOG:  checkpoint complete: wrote 3 buffers (0.0%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.301 s, sync=0.011 s, total=0.326 s; sync files=4, longest=0.011 s, average=0.003 s; distance=0 kB, estimate=3581 kB; lsn=0/20E2720, redo lsn=0/20E26C8
+2026-10-11 22:32:30.610 MDT [2782] LOG:  checkpoint starting: time
+2026-10-11 22:32:30.836 MDT [2782] LOG:  checkpoint complete: wrote 2 buffers (0.0%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.202 s, sync=0.012 s, total=0.227 s; sync files=3, longest=0.012 s, average=0.004 s; distance=1 kB, estimate=3223 kB; lsn=0/20E2B38, redo lsn=0/20E2AE0

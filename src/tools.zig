@@ -1,6 +1,7 @@
 const std = @import("std");
 const mem = std.mem;
 const fs = std.fs;
+const fmt = std.fmt;
 const process = std.process;
 
 const Error = error{
@@ -90,6 +91,13 @@ pub fn IDMap(comptime T: type) type {
             self.*.open_len += 1;
         }
     };
+}
+
+pub fn parseFingerprint(hex: []const u8) ![32]u8 {
+    if (hex.len != 64) return error.InvalidLength;
+    var out: [32]u8 = undefined;
+    _ = try fmt.hexToBytes(&out, hex);
+    return out;
 }
 
 pub fn pathFromBinary(io: std.Io, allocator: mem.Allocator, path: []const u8) ![]u8 {

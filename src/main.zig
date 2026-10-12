@@ -5,11 +5,11 @@ const mem = std.mem;
 const atomic = std.atomic;
 const posix = std.posix;
 const process = std.process;
+const Io = std.Io;
 
 const commands = @import("commands.zig");
 const server_handler = @import("server_handler.zig");
 const ssh_handler = @import("ssh_handler.zig");
-const sql_handler = @import("sql_handler.zig");
 const lua_handler = @import("lua_handler.zig");
 const tools = @import("tools.zig");
 
@@ -75,7 +75,7 @@ pub fn main(init: process.Init) !void {
     lua.newLib(&lua_handler.lib_funcs);
     lua.setGlobal(lua_handler.lib_name);
 
-    var server: server_handler.Server = .init(allocator, lua, pool);
+    var server: server_handler.Server = .init(allocator, io, lua, pool);
     defer server.deinit();
 
     lua.pushLightUserdata(@ptrCast(&server));
@@ -142,7 +142,12 @@ pub fn main(init: process.Init) !void {
         }
         log.debug("[CONNECT] client connection accepted", .{});
 
-        const thread = std.Thread.spawn(.{ .stack_size = 512 * 1024 }, handleClient, .{ allocator, &server, session }) catch |err| {
+        const thread = std.Thread.spawn(.{ .stack_size = 512 * 1024 }, handleClient, .{
+            allocator,
+            io,
+            &server,
+            session,
+        }) catch |err| {
             log.err("failed to spawn thread: {}", .{err});
             ssh.ssh_disconnect(session);
             ssh.ssh_free(session);
@@ -154,7 +159,7 @@ pub fn main(init: process.Init) !void {
     log.info("[STOP] server closed successfully", .{});
 }
 
-fn handleClient(allocator: mem.Allocator, server: *server_handler.Server, session: ssh.ssh_session) !void {
+fn handleClient(allocator: mem.Allocator, io: Io, server: *server_handler.Server, session: ssh.ssh_session) !void {
     defer {
         ssh.ssh_disconnect(session);
         ssh.ssh_free(session);
@@ -171,6 +176,7 @@ fn handleClient(allocator: mem.Allocator, server: *server_handler.Server, sessio
     var username: []const u8 = "unknown";
     var fingerprint: [32]u8 = undefined;
     var auth_success = false;
+    var client_id: u32 = 0;
     while (!auth_success) {
         const msg = ssh.ssh_message_get(session) orelse break;
         defer ssh.ssh_message_free(msg);
@@ -203,7 +209,9 @@ fn handleClient(allocator: mem.Allocator, server: *server_handler.Server, sessio
                         @memcpy(&fingerprint, hash_ptr[0..32]);
                     }
 
-                    if (!server.isAuthenticClient(fingerprint)) {
+                    if (try server.authenticate(fingerprint)) |id| {
+                        client_id = id;
+                    } else {
                         log.warn("[REJECT] client is not whitelisted: fingerprint=\"{x}\"", .{fingerprint});
                         return error.ClientRejected;
                     }
@@ -265,13 +273,8 @@ fn handleClient(allocator: mem.Allocator, server: *server_handler.Server, sessio
         }
     }
 
-    const client_id = 0;
-
-    try server.addClient(.{
-        .id = client_id, // get this from database
-        .channel = channel,
-    });
-    defer server.removeClient(client_id) catch {};
+    try server.addClient(client_id);
+    defer server.removeClient(client_id);
 
     log.info("[ACCEPT] id={d} username=\"{s}\" fingerprint=\"{x}\"", .{ client_id, username, fingerprint });
 
@@ -283,21 +286,33 @@ fn handleClient(allocator: mem.Allocator, server: *server_handler.Server, sessio
 
         const input = input_buf[0..@intCast(bytes_read)];
 
-        if (std.mem.eql(u8, input, "q") or std.mem.eql(u8, input, "q\r") or std.mem.eql(u8, input, "q\r\n")) {
+        if (std.mem.eql(u8, input, "q")) {
             try ssh_handler.channelWriteAll(channel, "disconnecting...\r\n");
             break;
         }
 
         if (mem.eql(u8, input, "w")) {
-            _ = try commands.runCommand(allocator, client_id, server, "/teste");
+            _ = try commands.runCommand(allocator, io, client_id, server, "/teste");
         }
 
         if (mem.eql(u8, input, "r")) {
-            _ = try commands.runCommand(allocator, client_id, server, "/test");
+            _ = try commands.runCommand(allocator, io, client_id, server, "/test");
         }
 
-        try ssh_handler.channelPrint(allocator, channel, "read: {s}\r\n", .{input});
+        try flush(server, channel, client_id);
     }
 
     log.info("[DISCONNECT] id={d} username=\"{s}\" fingerprint=\"{x}\"", .{ client_id, username, fingerprint });
+}
+
+fn flush(server: *server_handler.Server, channel: ssh.ssh_channel, client_id: u32) !void {
+    var pending = server.takeOutbox(client_id) orelse return;
+    defer {
+        for (pending.items) |m| server.allocator.free(m.bytes);
+        pending.deinit(server.allocator);
+    }
+    for (pending.items) |m| switch (m.stream) {
+        .StdOut => try ssh_handler.channelWriteAll(channel, m.bytes),
+        .StdErr => try ssh_handler.channelWriteAllErr(channel, m.bytes),
+    };
 }

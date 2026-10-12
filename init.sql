@@ -1,14 +1,11 @@
-DROP TABLE IF EXISTS channels CASCADE;
-DROP TABLE IF EXISTS whitelist CASCADE;
-
-CREATE TABLE channels (
+CREATE TABLE IF NOT EXISTS channels (
     id SERIAL PRIMARY KEY,
-    name VARCHAR(50) NOT NULL,
-    type VARCHAR(50) NOT NULL
+    name VARCHAR(32) UNIQUE NOT NULL,
+    type VARCHAR(16) NOT NULL
 );
 
-CREATE TABLE whitelist (
+CREATE TABLE IF NOT EXISTS whitelist (
     id SERIAL PRIMARY KEY,
-    fingerprint VARCHAR(32) NOT NULL,
-    rank SMALLINT CHECK (rank >= 0 AND rank <= 255) NOT NULL -- must be u8
+    fingerprint BYTEA UNIQUE NOT NULL CHECK (octet_length(fingerprint) = 32),
+    rank SMALLINT NOT NULL CHECK (rank >= 0 AND rank <= 255) -- must be u8
 );

@@ -111,7 +111,7 @@
               pkgs.gnugrep
             ];
             text = ''
-                        DB_NAME="''${DB_NAME:-chat_server}"
+              DB_NAME="''${DB_NAME:-chat_server}"
               psql -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname = '$DB_NAME'" | grep -q 1 \
                 || createdb "$DB_NAME"
               psql -v ON_ERROR_STOP=1 -d "$DB_NAME" -f ./init.sql
@@ -124,7 +124,7 @@
               makeDatabase
             ];
             text = ''
-                        dropdb --if-exists "''${DB_NAME:-chat_server}"
+              dropdb --if-exists "''${DB_NAME:-chat_server}"
               make-database
             '';
           };
