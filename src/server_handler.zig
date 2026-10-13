@@ -171,9 +171,6 @@ pub const OutMsg = struct {
 
 pub const Client = struct {
     outbox: std.ArrayListUnmanaged(OutMsg) = .empty,
+    cols: u16 = 80,
+    rows: u16 = 24,
 };
-
-// modular chat server
-// use ssh to communicate
-// lua plugins can create custom channels
-// for white list only, client's with fingerprints that are already in the system are accepted

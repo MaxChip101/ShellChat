@@ -154,7 +154,7 @@ pub fn main(init: process.Init) !void {
             continue;
         };
 
-        thread.detach();
+        thread.join();
     }
     log.info("[STOP] server closed successfully", .{});
 }
@@ -280,28 +280,43 @@ fn handleClient(allocator: mem.Allocator, io: Io, server: *server_handler.Server
 
     var input_buf: [1024]u8 = undefined;
 
-    while (true) {
-        const bytes_read = ssh.channel_read(channel, &input_buf, @intCast(input_buf.len), 0);
-        if (bytes_read <= 0) break;
+    var command_line: std.ArrayList(u8) = .empty;
+    defer command_line.deinit(allocator);
+    while (running.load(.acquire)) {
+        _ = server.clients.get(client_id) orelse {
+            break;
+        };
+        const bytes_read = ssh.channel_read_nonblocking(channel, &input_buf, @intCast(input_buf.len), 0);
+        if (bytes_read < 0) {
+            break;
+        } else if (bytes_read == 0) {
+            if (ssh.ssh_channel_is_eof(channel) != 0) {
+                break;
+            }
+            continue;
+        }
 
         const input = input_buf[0..@intCast(bytes_read)];
 
-        if (std.mem.eql(u8, input, "q")) {
-            try ssh_handler.channelWriteAll(channel, "disconnecting...\r\n");
-            break;
-        }
-
-        if (mem.eql(u8, input, "w")) {
-            _ = try commands.runCommand(allocator, io, client_id, server, "/teste");
-        }
-
-        if (mem.eql(u8, input, "r")) {
-            _ = try commands.runCommand(allocator, io, client_id, server, "/test");
+        for (input) |ch| {
+            switch (ch) {
+                '\n', '\r' => {
+                    try ssh_handler.channelWriteAll(channel, "\r\n");
+                    _ = try commands.runCommand(allocator, io, client_id, server, command_line.items);
+                    command_line.clearRetainingCapacity();
+                },
+                '\x08', '\x7f' => _ = command_line.pop(),
+                else => {
+                    try command_line.append(allocator, ch);
+                },
+            }
+            try ssh_handler.channelPrint(allocator, channel, "> {s}\x1b[K\r", .{command_line.items});
         }
 
         try flush(server, channel, client_id);
     }
 
+    try ssh_handler.channelWriteAll(channel, "disconnecting...\r\n");
     log.info("[DISCONNECT] id={d} username=\"{s}\" fingerprint=\"{x}\"", .{ client_id, username, fingerprint });
 }
 

@@ -17,6 +17,36 @@ pub fn runCommand(allocator: mem.Allocator, io: Io, client_id: u32, server: *ser
     }
     const args = args_list.items;
 
+    if (isInternalCommand(command)) {
+        return try runInternalCommand(io, server, client_id, command, args);
+    } else {
+        return try runLuaCommand(io, server, client_id, command, args);
+    }
+}
+
+const internal_commands = [_][]const u8{
+    "/exit",
+};
+
+fn isInternalCommand(command: []const u8) bool {
+    for (internal_commands) |in_cmd| {
+        if (mem.eql(u8, command, in_cmd)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+fn runInternalCommand(io: Io, server: *server_handler.Server, client_id: u32, command: []const u8, args: [][]const u8) !bool {
+    _ = io;
+    _ = args;
+    if (mem.eql(u8, command, internal_commands[0])) {
+        server.removeClient(client_id);
+    }
+    return true;
+}
+
+fn runLuaCommand(io: Io, server: *server_handler.Server, client_id: u32, command: []const u8, args: [][]const u8) !bool {
     const callback = server.commands.get(command) orelse {
         server.sendFmt(client_id, .StdErr, "Command: \'{s}\' does not exist\r\n", .{command});
         return false;
