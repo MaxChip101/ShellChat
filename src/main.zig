@@ -108,10 +108,27 @@ pub fn main(init: process.Init) !void {
         lua_handler.pullUInt(lua, -1)
     else
         2222;
-
     const port: c_uint = @intCast(raw_port);
     lua.pop(1);
+
+    _ = lua.getField(-1, "manage_whitelist_rank");
+    const raw_manage_whitelist_rank = if (lua.isInteger(-1))
+        lua_handler.pullUInt(lua, -1)
+    else
+        255;
+    const manage_whitelist_rank: u8 = @intCast(raw_manage_whitelist_rank);
     lua.pop(1);
+
+    _ = lua.getField(-1, "manage_channel_rank");
+    const raw_manage_channel_rank = if (lua.isInteger(-1))
+        lua_handler.pullUInt(lua, -1)
+    else
+        255;
+    const manage_channel_rank: u8 = @intCast(raw_manage_channel_rank);
+    lua.pop(1);
+
+    server.manage_whitelist_rank = manage_whitelist_rank;
+    server.manage_channel_rank = manage_channel_rank;
 
     _ = ssh.ssh_init();
     defer _ = ssh.ssh_finalize();
@@ -256,6 +273,8 @@ fn handleClient(allocator: mem.Allocator, io: Io, server: *server_handler.Server
         ssh.ssh_channel_free(channel);
     }
 
+    try ssh_handler.channelPrint(allocator, channel, "Welcome {s}, type '/help' for command that can be used\r\n", .{username});
+
     while (true) {
         const req_msg = ssh.ssh_message_get(session) orelse break;
         defer ssh.ssh_message_free(req_msg);
@@ -273,7 +292,7 @@ fn handleClient(allocator: mem.Allocator, io: Io, server: *server_handler.Server
         }
     }
 
-    try server.addClient(client_id);
+    try server.addClient(client_id, username, fingerprint);
     defer server.removeClient(client_id);
 
     log.info("[ACCEPT] id={d} username=\"{s}\" fingerprint=\"{x}\"", .{ client_id, username, fingerprint });
@@ -282,10 +301,9 @@ fn handleClient(allocator: mem.Allocator, io: Io, server: *server_handler.Server
 
     var command_line: std.ArrayList(u8) = .empty;
     defer command_line.deinit(allocator);
-    while (running.load(.acquire)) {
-        _ = server.clients.get(client_id) orelse {
-            break;
-        };
+
+    var on = true;
+    while (running.load(.acquire) and on) {
         const bytes_read = ssh.channel_read_nonblocking(channel, &input_buf, @intCast(input_buf.len), 0);
         if (bytes_read < 0) {
             break;
@@ -302,7 +320,7 @@ fn handleClient(allocator: mem.Allocator, io: Io, server: *server_handler.Server
             switch (ch) {
                 '\n', '\r' => {
                     try ssh_handler.channelWriteAll(channel, "\r\n");
-                    _ = try commands.runCommand(allocator, io, client_id, server, command_line.items);
+                    if (try commands.runCommand(allocator, io, client_id, server, command_line.items)) on = false;
                     command_line.clearRetainingCapacity();
                 },
                 '\x08', '\x7f' => _ = command_line.pop(),

@@ -81,3 +81,67 @@
 2026-10-13 09:25:04.344 MDT [5113] LOG:  checkpoint complete: wrote 2 buffers (0.0%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.202 s, sync=0.012 s, total=0.227 s; sync files=3, longest=0.011 s, average=0.004 s; distance=2 kB, estimate=2 kB; lsn=0/20EC820, redo lsn=0/20EC7C8
 2026-10-13 09:50:01.850 MDT [5113] LOG:  checkpoint starting: time
 2026-10-13 09:50:02.079 MDT [5113] LOG:  checkpoint complete: wrote 2 buffers (0.0%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.203 s, sync=0.012 s, total=0.229 s; sync files=3, longest=0.011 s, average=0.004 s; distance=2 kB, estimate=2 kB; lsn=0/20ED298, redo lsn=0/20ED240
+2026-10-13 11:20:52.285 MDT [5113] LOG:  checkpoint starting: time
+2026-10-13 11:20:52.510 MDT [5113] LOG:  checkpoint complete: wrote 2 buffers (0.0%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.202 s, sync=0.011 s, total=0.225 s; sync files=3, longest=0.011 s, average=0.004 s; distance=2 kB, estimate=2 kB; lsn=0/20EDBE8, redo lsn=0/20EDB90
+2026-10-13 11:35:52.511 MDT [5113] LOG:  checkpoint starting: time
+2026-10-13 11:35:52.741 MDT [5113] LOG:  checkpoint complete: wrote 2 buffers (0.0%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.202 s, sync=0.012 s, total=0.231 s; sync files=3, longest=0.011 s, average=0.004 s; distance=2 kB, estimate=2 kB; lsn=0/20EE5C8, redo lsn=0/20EE570
+2026-10-13 12:05:32.010 MDT [20196] ERROR:  operator does not exist: character varying @> unknown at character 35
+2026-10-13 12:05:32.010 MDT [20196] HINT:  No operator matches the given name and argument types. You might need to add explicit type casts.
+2026-10-13 12:05:32.010 MDT [20196] STATEMENT:  SELECT * FROM channels WHERE name @> $1
+2026-10-13 12:05:52.742 MDT [5113] LOG:  checkpoint starting: time
+2026-10-13 12:05:53.370 MDT [5113] LOG:  checkpoint complete: wrote 6 buffers (0.0%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.603 s, sync=0.012 s, total=0.628 s; sync files=7, longest=0.011 s, average=0.002 s; distance=23 kB, estimate=23 kB; lsn=0/20F4310, redo lsn=0/20F42B8
+2026-10-13 12:10:52.370 MDT [5113] LOG:  checkpoint starting: time
+2026-10-13 12:10:52.695 MDT [5113] LOG:  checkpoint complete: wrote 3 buffers (0.0%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.302 s, sync=0.011 s, total=0.326 s; sync files=4, longest=0.011 s, average=0.003 s; distance=11 kB, estimate=22 kB; lsn=0/20F6F40, redo lsn=0/20F6EE8
+2026-10-13 12:15:52.696 MDT [5113] LOG:  checkpoint starting: time
+2026-10-13 12:15:52.924 MDT [5113] LOG:  checkpoint complete: wrote 2 buffers (0.0%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.202 s, sync=0.012 s, total=0.229 s; sync files=3, longest=0.011 s, average=0.004 s; distance=2 kB, estimate=20 kB; lsn=0/20F7A60, redo lsn=0/20F7A08
+2026-10-13 12:20:52.924 MDT [5113] LOG:  checkpoint starting: time
+2026-10-13 12:20:53.149 MDT [5113] LOG:  checkpoint complete: wrote 2 buffers (0.0%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.201 s, sync=0.011 s, total=0.226 s; sync files=3, longest=0.011 s, average=0.004 s; distance=2 kB, estimate=18 kB; lsn=0/20F85A0, redo lsn=0/20F8548
+2026-10-13 12:40:52.149 MDT [5113] LOG:  checkpoint starting: time
+2026-10-13 12:40:52.373 MDT [5113] LOG:  checkpoint complete: wrote 2 buffers (0.0%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.201 s, sync=0.011 s, total=0.225 s; sync files=3, longest=0.011 s, average=0.004 s; distance=3 kB, estimate=16 kB; lsn=0/20F9228, redo lsn=0/20F91D0
+2026-10-13 16:36:13.872 MDT [5113] LOG:  checkpoint starting: time
+2026-10-13 16:36:14.088 MDT [5113] LOG:  checkpoint complete: wrote 2 buffers (0.0%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.201 s, sync=0.003 s, total=0.217 s; sync files=3, longest=0.002 s, average=0.001 s; distance=3 kB, estimate=15 kB; lsn=0/20FA030, redo lsn=0/20F9FC0
+2026-10-13 16:41:13.088 MDT [5113] LOG:  checkpoint starting: time
+2026-10-13 16:41:13.312 MDT [5113] LOG:  checkpoint complete: wrote 2 buffers (0.0%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.201 s, sync=0.011 s, total=0.225 s; sync files=3, longest=0.011 s, average=0.004 s; distance=3 kB, estimate=14 kB; lsn=0/20FAD28, redo lsn=0/20FACD0
+2026-10-13 17:01:13.312 MDT [5113] LOG:  checkpoint starting: time
+2026-10-13 17:01:13.527 MDT [5113] LOG:  checkpoint complete: wrote 2 buffers (0.0%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.201 s, sync=0.002 s, total=0.215 s; sync files=3, longest=0.001 s, average=0.001 s; distance=3 kB, estimate=13 kB; lsn=0/20FBB80, redo lsn=0/20FBAF0
+2026-10-13 17:06:13.527 MDT [5113] LOG:  checkpoint starting: time
+2026-10-13 17:06:13.752 MDT [5113] LOG:  checkpoint complete: wrote 2 buffers (0.0%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.201 s, sync=0.011 s, total=0.225 s; sync files=3, longest=0.011 s, average=0.004 s; distance=3 kB, estimate=12 kB; lsn=0/20FCA40, redo lsn=0/20FC9E8
+2026-10-13 17:25:42.958 MDT [26723] ERROR:  column "rank" of relation "channels" does not exist at character 35
+2026-10-13 17:25:42.958 MDT [26723] STATEMENT:  INSERT INTO channels (name, type, rank) VALUES ($1, $2, $3)
+2026-10-13 17:26:13.752 MDT [5113] LOG:  checkpoint starting: time
+2026-10-13 17:26:13.977 MDT [5113] LOG:  checkpoint complete: wrote 2 buffers (0.0%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.201 s, sync=0.011 s, total=0.225 s; sync files=3, longest=0.011 s, average=0.004 s; distance=4 kB, estimate=11 kB; lsn=0/20FDA50, redo lsn=0/20FD9F8
+2026-10-13 17:26:21.132 MDT [26823] ERROR:  syntax error at or near "rank" at character 138
+2026-10-13 17:26:21.132 MDT [26823] STATEMENT:  CREATE TABLE IF NOT EXISTS channels (
+	    id SERIAL PRIMARY KEY,
+	    name VARCHAR(32) UNIQUE NOT NULL,
+	    type VARCHAR(16) NOT NULL
+	    rank SMALLINT NOT NULL CHECK (view_rank >= 0 AND rank <= 255) -- must be u8
+	);
+2026-10-13 17:28:02.403 MDT [5113] LOG:  checkpoint starting: immediate force wait
+2026-10-13 17:28:02.407 MDT [5113] LOG:  checkpoint complete: wrote 1 buffers (0.0%), wrote 0 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.001 s, sync=0.001 s, total=0.004 s; sync files=1, longest=0.001 s, average=0.001 s; distance=1 kB, estimate=10 kB; lsn=0/20FDFA8, redo lsn=0/20FDF50
+2026-10-13 17:28:02.502 MDT [27181] ERROR:  syntax error at or near "rank" at character 138
+2026-10-13 17:28:02.502 MDT [27181] STATEMENT:  CREATE TABLE IF NOT EXISTS channels (
+	    id SERIAL PRIMARY KEY,
+	    name VARCHAR(32) UNIQUE NOT NULL,
+	    type VARCHAR(16) NOT NULL
+	    rank SMALLINT NOT NULL CHECK (view_rank >= 0 AND rank <= 255) -- must be u8
+	);
+2026-10-13 17:28:23.619 MDT [5113] LOG:  checkpoint starting: immediate force wait
+2026-10-13 17:28:23.624 MDT [5113] LOG:  checkpoint complete: wrote 3 buffers (0.0%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.002 s, sync=0.001 s, total=0.005 s; sync files=4, longest=0.001 s, average=0.001 s; distance=4371 kB, estimate=4371 kB; lsn=0/2542CC0, redo lsn=0/2542C68
+2026-10-13 17:28:23.675 MDT [27203] ERROR:  syntax error at or near "rank" at character 138
+2026-10-13 17:28:23.675 MDT [27203] STATEMENT:  CREATE TABLE IF NOT EXISTS channels (
+	    id SERIAL PRIMARY KEY,
+	    name VARCHAR(32) UNIQUE NOT NULL,
+	    type VARCHAR(16) NOT NULL
+	    rank SMALLINT NOT NULL CHECK (rank >= 0 AND rank <= 255) -- must be u8
+	);
+2026-10-13 17:28:47.308 MDT [5113] LOG:  checkpoint starting: immediate force wait
+2026-10-13 17:28:47.312 MDT [5113] LOG:  checkpoint complete: wrote 3 buffers (0.0%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.001 s, sync=0.001 s, total=0.005 s; sync files=4, longest=0.001 s, average=0.001 s; distance=4371 kB, estimate=4371 kB; lsn=0/2987A48, redo lsn=0/29879F0
+2026-10-13 17:33:47.313 MDT [5113] LOG:  checkpoint starting: time
+2026-10-13 17:35:24.477 MDT [5113] LOG:  checkpoint complete: wrote 970 buffers (5.9%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=97.119 s, sync=0.034 s, total=97.165 s; sync files=312, longest=0.010 s, average=0.001 s; distance=4422 kB, estimate=4422 kB; lsn=0/2DD9610, redo lsn=0/2DD93D8
+2026-10-13 21:28:47.481 MDT [5113] LOG:  checkpoint starting: time
+2026-10-13 21:28:47.696 MDT [5113] LOG:  checkpoint complete: wrote 2 buffers (0.0%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.201 s, sync=0.011 s, total=0.216 s; sync files=3, longest=0.011 s, average=0.004 s; distance=1 kB, estimate=3980 kB; lsn=0/2DD98D8, redo lsn=0/2DD9880
+2026-10-13 21:33:47.696 MDT [5113] LOG:  checkpoint starting: time
+2026-10-13 21:33:47.911 MDT [5113] LOG:  checkpoint complete: wrote 2 buffers (0.0%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.201 s, sync=0.011 s, total=0.216 s; sync files=3, longest=0.011 s, average=0.004 s; distance=1 kB, estimate=3582 kB; lsn=0/2DD9D30, redo lsn=0/2DD9CD8
+2026-10-13 21:38:47.911 MDT [5113] LOG:  checkpoint starting: time
+2026-10-13 21:38:48.136 MDT [5113] LOG:  checkpoint complete: wrote 2 buffers (0.0%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.201 s, sync=0.011 s, total=0.225 s; sync files=3, longest=0.011 s, average=0.004 s; distance=1 kB, estimate=3224 kB; lsn=0/2DDA3E8, redo lsn=0/2DDA390

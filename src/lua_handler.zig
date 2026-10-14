@@ -75,10 +75,13 @@ pub fn registerCommand(lua: *zlua.Lua) i32 {
 pub fn createChannel(lua: *zlua.Lua) i32 {
     const name = pullString(lua, 1);
     const channel_type = pullString(lua, 2);
+    const raw_rank = pullUInt(lua, 3);
+
+    const rank: u8 = @intCast(raw_rank);
 
     const server = getServer(lua);
 
-    server.addChannel(name, channel_type) catch |err| {
+    server.addChannel(name, channel_type, rank) catch |err| {
         log.err("[INTERNAL] failed to create channel on database: {}", .{err});
         return 0;
     };

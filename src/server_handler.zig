@@ -20,6 +20,9 @@ pub const Server = struct {
     state_mutex: Io.Mutex = .init,
     lua_mutex: Io.Mutex = .init,
 
+    manage_whitelist_rank: u8 = 255,
+    manage_channel_rank: u8 = 255,
+
     const Self = @This();
 
     pub fn init(allocator: mem.Allocator, io: Io, lua: *zlua.Lua, pool: *pg.Pool) Self {
@@ -69,8 +72,17 @@ pub const Server = struct {
         return @intCast(try row.get(i32, 0));
     }
 
-    pub fn addChannel(self: *Self, name: []const u8, channel_type: []const u8) !void {
-        _ = try self.pool.exec("INSERT INTO channels (name, type) VALUES ($1, $2)", .{ name, channel_type });
+    pub fn getChannels(self: *Self, client_id: u32) !*pg.Result {
+        const client = try self.getWhitelistClient(client_id) orelse return error.InvalidClientID;
+        return try self.pool.query("SELECT * FROM channels WHERE rank < $1", .{client.rank});
+    }
+
+    pub fn getWhitelist(self: *Self) !*pg.Result {
+        return try self.pool.query("SELECT * FROM whitelist", .{});
+    }
+
+    pub fn addChannel(self: *Self, name: []const u8, channel_type: []const u8, rank: u8) !void {
+        _ = try self.pool.exec("INSERT INTO channels (name, type, rank) VALUES ($1, $2, $3)", .{ name, channel_type, rank });
     }
 
     pub fn removeChannel(self: *Self, id: u32) !bool {
@@ -83,10 +95,10 @@ pub const Server = struct {
         try self.*.commands.put(self.allocator, command_name, lua_callback);
     }
 
-    pub fn addClient(self: *Self, client_id: u32) !void {
+    pub fn addClient(self: *Self, client_id: u32, name: []const u8, fingerprint: [32]u8) !void {
         const client = try self.allocator.create(Client);
         errdefer self.allocator.destroy(client);
-        client.* = .{};
+        client.* = .{ .name = name, .fingerprint = &fingerprint };
 
         self.state_mutex.lockUncancelable(self.io);
         defer self.state_mutex.unlock(self.io);
@@ -124,6 +136,28 @@ pub const Server = struct {
         }
 
         return true;
+    }
+
+    pub fn getChannelFromName(self: *Server, channel_name: []const u8) !?Channel {
+        var row = try self.pool.row("SELECT * FROM channels WHERE name = $1", .{channel_name}) orelse return null;
+        defer row.deinit() catch {};
+        return .{ .name = channel_name, .id = @intCast(try row.get(i32, 0)), .type = try row.get([]const u8, 2) };
+    }
+
+    pub fn getWhitelistClient(self: *Server, client_id: u32) !?WhitelistClient {
+        var row = try self.pool.row("SELECT * FROM whitelist WHERE id = $1", .{client_id}) orelse return null;
+        defer row.deinit() catch {};
+
+        const fp_bytes = try row.get([]const u8, 1);
+        if (fp_bytes.len != 32) {
+            return error.InvalidFingerprint;
+        }
+        var fingerprint: [32]u8 = undefined;
+        @memcpy(&fingerprint, fp_bytes);
+
+        const rank: u8 = @intCast(try row.get(i16, 2));
+
+        return .{ .id = client_id, .fingerprint = fingerprint, .rank = rank };
     }
 
     pub fn sendTo(self: *Server, client_id: u32, stream: Stream, bytes: []const u8) void {
@@ -170,7 +204,22 @@ pub const OutMsg = struct {
 };
 
 pub const Client = struct {
+    name: []const u8,
+    fingerprint: []const u8,
     outbox: std.ArrayListUnmanaged(OutMsg) = .empty,
+    channel: ?Channel = null,
     cols: u16 = 80,
     rows: u16 = 24,
+};
+
+pub const Channel = struct {
+    id: u32,
+    name: []const u8,
+    type: []const u8,
+};
+
+pub const WhitelistClient = struct {
+    id: u32,
+    fingerprint: [32]u8,
+    rank: u8,
 };
