@@ -8,221 +8,172 @@ const tools = @import("tools.zig");
 
 const zlua = @import("lua");
 
-pub fn runCommand(allocator: mem.Allocator, io: Io, client_id: u32, server: *server_handler.Server, command_str: []const u8) !bool {
-    if (command_str.len == 0) return false;
+const Ctx = struct {
+    allocator: mem.Allocator,
+    io: Io,
+    server: *server_handler.Server,
+    client_id: u32,
+    args: []const []const u8,
 
-    // get command and args
-    var it = mem.splitScalar(u8, command_str, ' ');
-    const command = it.first();
+    const Self = @This();
+
+    fn fail(self: *Self, comptime fmt: []const u8, args: anytype) error{BadArgs} {
+        self.server.sendFmt(self.client_id, .StdErr, fmt ++ "\r\n", args);
+        return error.BadArgs;
+    }
+
+    fn ok(self: *Self, msg: []const u8) bool {
+        self.server.sendFmt(self.client_id, .StdOut, "{s}\r\n", .{msg});
+        return false;
+    }
+};
+
+const Handler = *const fn (*Ctx) anyerror!bool;
+
+const command_list = std.StaticStringMap(Handler).initComptime(.{
+    .{ "/exit", &cmdExit },
+    .{ "/help", &cmdHelp },
+    .{ "/join", &cmdJoin },
+    .{ "/leave", &cmdLeave },
+    .{ "/whitelist", &cmdWhitelist },
+    .{ "/blacklist", &cmdBlacklist },
+    .{ "/createChannel", &cmdCreateChannel },
+    .{ "/removeChannel", &cmdRemoveChannel },
+    .{ "/list", &cmdList },
+    .{ "/broadcast", &cmdBroadcast },
+});
+
+pub fn runCommand(allocator: mem.Allocator, io: Io, client_id: u32, server: *server_handler.Server, command_str: []const u8) !bool {
+    var it = mem.tokenizeScalar(u8, command_str, ' ');
+    const command = it.next() orelse return false;
+
     var args_list: std.ArrayList([]const u8) = .empty;
     defer args_list.deinit(allocator);
     while (it.next()) |arg| {
         try args_list.append(allocator, arg);
     }
-    const args = args_list.items;
 
-    if (isInternalCommand(command)) {
-        return try runInternalCommand(io, server, client_id, command, args);
+    if (command[0] != '/') {
+        // handle sending to channel
+        return false;
     }
 
-    try runLuaCommand(io, server, client_id, command, args);
+    if (command_list.get(command)) |handler| {
+        var ctx: Ctx = .{ .allocator = allocator, .io = io, .server = server, .client_id = client_id, .args = args_list.items };
+        return handler(&ctx) catch |err| switch (err) {
+            error.BadArgs, error.PermissionDenied => false,
+            else => return err,
+        };
+    }
+
+    try runLuaCommand(io, server, client_id, command, args_list.items);
     return false;
 }
 
-const internal_commands = [_][]const u8{
-    "/exit",
-    "/help",
-    "/join",
-    "/leave",
-    "/whitelist",
-    "/blacklist",
-    "/createChannel",
-    "/removeChannel",
-    "/list",
-};
+fn requireRank(ctx: *Ctx, needed: u8) !server_handler.WhitelistClient {
+    const me = try ctx.server.getWhitelistClient(ctx.client_id) orelse return error.PermissionDenied;
+    if (me.rank < needed) {
+        ctx.server.sendFmt(ctx.client_id, .StdErr, "Invalid Permissions: {d} < {d}\r\n", .{ me.rank, needed });
+        return error.PermissionDenied;
+    }
+    return me;
+}
 
-fn isInternalCommand(command: []const u8) bool {
-    for (internal_commands) |in_cmd| {
-        if (mem.eql(u8, command, in_cmd)) {
-            return true;
-        }
+fn cmdExit(_: *Ctx) !bool {
+    return true;
+}
+
+fn cmdHelp(ctx: *Ctx) !bool {
+    ctx.server.sendTo(ctx.client_id, .StdOut, "Internal Commands:\n\r");
+    for (command_list.keys()) |cmd| {
+        ctx.server.sendFmt(ctx.client_id, .StdOut, "\t{s}\n\r", .{cmd});
+    }
+    ctx.server.sendTo(ctx.client_id, .StdOut, "Lua Commands:\n\r");
+    for (ctx.server.commands.keys()) |cmd| {
+        ctx.server.sendFmt(ctx.client_id, .StdOut, "\t{s}\n\r", .{cmd});
     }
     return false;
 }
 
-fn runInternalCommand(io: Io, server: *server_handler.Server, client_id: u32, command: []const u8, args: [][]const u8) !bool {
-    if (mem.eql(u8, command, internal_commands[0])) { // /exit
-        return true;
-    } else if (mem.eql(u8, command, internal_commands[1])) { // /help
-        server.sendTo(client_id, .StdOut, "Internal Commands:\n\r");
-        for (internal_commands) |cmd| {
-            server.sendFmt(client_id, .StdOut, "\t{s}\n\r", .{cmd});
-        }
-        server.sendTo(client_id, .StdOut, "Lua Commands:\n\r");
-        for (server.commands.keys()) |cmd| {
-            server.sendFmt(client_id, .StdOut, "\t{s}\n\r", .{cmd});
-        }
-    } else if (mem.eql(u8, command, internal_commands[2])) { // /join [channel]
-        if (args.len < 1) {
-            server.sendTo(client_id, .StdErr, "Missing arguments: [channel_name]\r\n");
-            return false;
-        }
-        if (try server.getChannelFromName(args[0])) |channel| {
-            server.state_mutex.lockUncancelable(io);
-            defer server.state_mutex.unlock(io);
-            const client = server.clients.getPtr(client_id) orelse return false;
-            client.*.channel = channel;
-        } else {
-            server.sendFmt(client_id, .StdErr, "Channel does not exist with name: {s}\r\n", .{args[0]});
-        }
-    } else if (mem.eql(u8, command, internal_commands[3])) { // /leave
-        server.state_mutex.lockUncancelable(io);
-        defer server.state_mutex.unlock(io);
-        const client = server.clients.getPtr(client_id) orelse return false;
-        client.*.channel = null;
-    } else if (mem.eql(u8, command, internal_commands[4])) { // whitelist [fingerprint] [rank]
-        const client = try server.getWhitelistClient(client_id) orelse {
-            return false;
-        };
-
-        if (client.rank < server.manage_whitelist_rank) {
-            server.sendFmt(client_id, .StdErr, "Invalid Permissions: {d} < {d}\r\n", .{ client.rank, server.manage_whitelist_rank });
-            return false;
-        }
-
-        if (args.len < 2) {
-            server.sendTo(client_id, .StdErr, "Missing arguments: [fingerprint] [rank]\r\n");
-            return false;
-        }
-        const fingerprint = tools.parseFingerprint(args[0]) catch {
-            server.sendFmt(client_id, .StdErr, "Invalid fingerprint: {s}\r\n", .{args[0]});
-            return false;
-        };
-        const rank = std.fmt.parseInt(u8, args[1], 10) catch {
-            server.sendFmt(client_id, .StdErr, "Invalid rank: {s}\r\n", .{args[1]});
-            return false;
-        };
-        try server.whitelistClient(fingerprint, rank);
-        server.sendTo(client_id, .StdOut, "Successfully whitelisted client\r\n");
-    } else if (mem.eql(u8, command, internal_commands[5])) { // blacklist [client_id]
-        const client = try server.getWhitelistClient(client_id) orelse {
-            return false;
-        };
-
-        if (client.rank < server.manage_whitelist_rank) {
-            server.sendFmt(client_id, .StdErr, "Invalid Permissions: {d} < {d}\r\n", .{ client.rank, server.manage_whitelist_rank });
-            return false;
-        }
-
-        if (args.len < 1) {
-            server.sendTo(client_id, .StdErr, "Missing argument: [client_id]\r\n");
-            return false;
-        }
-        const c_id = std.fmt.parseInt(u32, args[1], 10) catch {
-            server.sendFmt(client_id, .StdErr, "Invalid client id: {s}\r\n", .{args[0]});
-            return false;
-        };
-        const successful = try server.blacklistClient(c_id);
-        if (successful) {
-            server.sendTo(client_id, .StdOut, "Successfully blacklisted client\r\n");
-        } else {
-            server.sendTo(client_id, .StdErr, "Failed to blacklist client\r\n");
-        }
-    } else if (mem.eql(u8, command, internal_commands[6])) { // createChannel [name] [type] [rank]
-        const client = try server.getWhitelistClient(client_id) orelse {
-            return false;
-        };
-
-        if (client.rank < server.manage_channel_rank) {
-            server.sendFmt(client_id, .StdErr, "Invalid Permissions: {d} < {d}\r\n", .{ client.rank, server.manage_channel_rank });
-            return false;
-        }
-
-        if (args.len < 3) {
-            server.sendTo(client_id, .StdErr, "Missing arguments: [name] [type] [rank]\r\n");
-            return false;
-        }
-        const rank = std.fmt.parseInt(u8, args[2], 10) catch {
-            server.sendFmt(client_id, .StdErr, "Invalid rank: {s}\r\n", .{args[1]});
-            return false;
-        };
-        try server.addChannel(args[0], args[1], rank);
-        server.sendTo(client_id, .StdOut, "Successfully created channel\r\n");
-    } else if (mem.eql(u8, command, internal_commands[7])) { // removeChannel [channel_id]
-        const client = try server.getWhitelistClient(client_id) orelse {
-            return false;
-        };
-
-        if (client.rank < server.manage_channel_rank) {
-            server.sendFmt(client_id, .StdErr, "Invalid Permissions: {d} < {d}\r\n", .{ client.rank, server.manage_channel_rank });
-            return false;
-        }
-
-        if (args.len < 1) {
-            server.sendTo(client_id, .StdErr, "Missing arguments: [channel_id]\r\n");
-            return false;
-        }
-        const channel_id = std.fmt.parseInt(u32, args[1], 10) catch {
-            server.sendFmt(client_id, .StdErr, "Invalid channel id: {s}\r\n", .{args[0]});
-            return false;
-        };
-        const successful = try server.removeChannel(channel_id);
-        if (successful) {
-            server.sendTo(client_id, .StdOut, "Successfully removed channel\r\n");
-        } else {
-            server.sendTo(client_id, .StdErr, "Failed to remove channel\r\n");
-        }
-    } else if (mem.eql(u8, command, internal_commands[8])) { // /list [topic]
-        if (args.len < 1) {
-            server.sendTo(client_id, .StdErr, "Missing arguments: [channels, whitelist, clients, channel_types]\r\n");
-            return false;
-        }
-
-        if (mem.eql(u8, args[0], "channels")) {
-            var result = try server.getChannels(client_id);
-            defer result.deinit();
-
-            server.sendTo(client_id, .StdOut, "Channels:\r\n");
-
-            while (try result.next()) |row| {
-                const id = try row.get(i32, 0);
-                const name = try row.get([]const u8, 1);
-                const channel_type = try row.get([]const u8, 2);
-                const rank = try row.get(i16, 3);
-
-                server.sendFmt(client_id, .StdOut, "\tid: {d}\tname: {s}\ttype: {s}\trank: {d}\r\n", .{ id, name, channel_type, rank });
-            }
-        } else if (mem.eql(u8, args[0], "whitelist")) {
-            var result = try server.getWhitelist();
-            defer result.deinit();
-
-            server.sendTo(client_id, .StdOut, "Whitelist:\r\n");
-
-            while (try result.next()) |row| {
-                const id = try row.get(i32, 0);
-                const fingerprint = try row.get([]const u8, 1);
-                const rank = try row.get(i16, 2);
-
-                server.sendFmt(client_id, .StdOut, "\tid: {d}\tfingerprint: {x}\trank: {d}\r\n", .{ id, fingerprint, rank });
-            }
-        } else if (mem.eql(u8, args[0], "clients")) {
-            server.state_mutex.lockUncancelable(io);
-            var it = server.clients.iterator();
-            server.state_mutex.unlock(io);
-
-            server.sendTo(client_id, .StdOut, "Clients:\r\n");
-            while (it.next()) |client| {
-                server.sendFmt(client_id, .StdOut, "\t{s} : {x}\r\n", .{ client.value_ptr.*.name, client.value_ptr.*.fingerprint });
-            }
-        } else if (mem.eql(u8, args[0], "channel_types")) {
-            server.sendTo(client_id, .StdOut, "Channel Types:\r\n");
-            for (server.channel_types.keys()) |channel_type| {
-                server.sendFmt(client_id, .StdOut, "\t{s}\r\n", .{channel_type});
-            }
-        } else {
-            server.sendFmt(client_id, .StdErr, "'{s}' is not a listable topic", .{args[0]});
-        }
+fn cmdJoin(ctx: *Ctx) !bool {
+    if (ctx.args.len < 1) return ctx.fail("Missing arguments: [channel_name]", .{});
+    const me = try requireRank(ctx, 0);
+    var channel = try ctx.server.getChannelFromName(ctx.args[0]) orelse
+        return ctx.fail("Channel does not exist with name: {s}", .{ctx.args[0]});
+    if (channel.rank > me.rank) {
+        channel.deinit(ctx.server.allocator);
+        return ctx.fail("Channel does not exist with name: {s}", .{ctx.args[0]});
     }
+    ctx.server.setChannel(ctx.client_id, channel);
+    return false;
+}
+
+fn cmdLeave(ctx: *Ctx) !bool {
+    ctx.server.setChannel(ctx.client_id, null);
+    return false;
+}
+
+fn cmdWhitelist(ctx: *Ctx) !bool {
+    const me = try requireRank(ctx, ctx.server.manage_whitelist_rank);
+    if (ctx.args.len < 2) return ctx.fail("Missing arguments: [fingerprint] [rank]", .{});
+    const fp = tools.parseFingerprint(ctx.args[0]) catch
+        return ctx.fail("Invalid fingerprint: {s}", .{ctx.args[0]});
+    const rank = std.fmt.parseInt(u8, ctx.args[1], 10) catch
+        return ctx.fail("Invalid rank: {s}", .{ctx.args[1]});
+    if (rank > me.rank) return ctx.fail("You cannot grant a rank above your own ({d})", .{me.rank});
+    if (!try ctx.server.whitelistClient(fp, rank, me.rank))
+        return ctx.fail("You cannot change a higher-ranked client", .{});
+    return ctx.ok("Successfully whitelisted client");
+}
+
+fn cmdBlacklist(ctx: *Ctx) !bool {
+    const me = try requireRank(ctx, ctx.server.manage_whitelist_rank);
+    if (ctx.args.len < 2) return ctx.fail("Missing arguments: [fingerprint] [rank]", .{});
+    const target_id = std.fmt.parseInt(u32, ctx.args[0], 10) catch
+        return ctx.fail("Invalid client id: {s}", .{ctx.args[0]});
+    const target = try ctx.server.getWhitelistClient(target_id) orelse
+        return ctx.fail("Client does not exist with id: {d}", .{target_id});
+    if (target.rank > me.rank) return ctx.fail("You cannot blacklist a higher-ranked client", .{});
+    if (!try ctx.server.blacklistClient(target_id)) return ctx.fail("Failed to blacklist client", .{});
+    return ctx.ok("Successfully blacklisted client");
+}
+
+fn cmdCreateChannel(ctx: *Ctx) !bool {
+    _ = try requireRank(ctx, ctx.server.manage_channel_rank);
+    if (ctx.args.len < 3) return ctx.fail("Missing arguments: [name] [type] [rank]", .{});
+    const rank = std.fmt.parseInt(u8, ctx.args[2], 10) catch
+        return ctx.fail("Invalid rank: {s}", .{ctx.args[2]});
+    try ctx.server.addChannel(ctx.args[0], ctx.args[1], rank);
+    return ctx.ok("Successfully created channel");
+}
+
+fn cmdRemoveChannel(ctx: *Ctx) !bool {
+    _ = try requireRank(ctx, ctx.server.manage_channel_rank);
+    if (ctx.args.len < 1) return ctx.fail("Missing arguments: [channel_id]", .{});
+    const id = std.fmt.parseInt(u32, ctx.args[0], 10) catch
+        return ctx.fail("Invalid channel id: {s}", .{ctx.args[0]});
+    if (!try ctx.server.removeChannel(id)) return ctx.fail("Failed to remove channel", .{});
+    return ctx.ok("Successfully removed channel");
+}
+
+fn cmdList(ctx: *Ctx) !bool {
+    if (ctx.args.len < 1) return ctx.fail("Missing arguments: [channels, whitelist, clients, channel_types]", .{});
+    return ctx.ok("IMPL");
+}
+
+fn cmdBroadcast(ctx: *Ctx) !bool {
+    if (ctx.args.len == 0) return ctx.fail("Missing message: /broadcast [message]", .{});
+
+    var buf: std.ArrayList(u8) = .empty;
+    defer buf.deinit(ctx.allocator);
+
+    for (ctx.args, 0..) |arg, i| {
+        if (i > 0) try buf.append(ctx.allocator, ' ');
+        try buf.appendSlice(ctx.allocator, arg);
+    }
+    try buf.appendSlice(ctx.allocator, "\r\n");
+
+    ctx.server.broadcast(.StdOut, buf.items);
     return false;
 }
 

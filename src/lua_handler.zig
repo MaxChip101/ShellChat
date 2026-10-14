@@ -100,7 +100,7 @@ pub fn deleteChannel(lua: *zlua.Lua) i32 {
     };
 
     if (!successful) {
-        lua.raiseErrorStr("Failed to delete channel with id: {d}", .{id});
+        lua.raiseErrorStr("Failed to delete channel with id: %d", .{id});
     }
 
     return 0;
@@ -120,10 +120,14 @@ pub fn whitelistClient(lua: *zlua.Lua) i32 {
 
     const server = getServer(lua);
 
-    server.whitelistClient(fp, rank) catch |err| {
+    const successful = server.whitelistClient(fp, rank, 255) catch |err| {
         log.err("[INTERNAL] failed to whitelist client on database: {}", .{err});
         return 0;
     };
+
+    if (!successful) {
+        lua.raiseErrorStr("Failed to whitelist client", .{});
+    }
 
     return 0;
 }
@@ -139,7 +143,7 @@ pub fn blacklistClient(lua: *zlua.Lua) i32 {
     };
 
     if (!successful) {
-        lua.raiseErrorStr("Failed to blacklist client with id: {d}", .{id});
+        lua.raiseErrorStr("Failed to blacklist client with id: %d", .{id});
     }
 
     return 0;

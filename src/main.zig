@@ -17,7 +17,14 @@ const ssh = @import("ssh");
 const pg = @import("pg");
 const zlua = @import("lua");
 
+const max_auth_attempts: u8 = 6;
+
 var running: atomic.Value(bool) = .init(true);
+
+var active_clients: atomic.Value(u32) = .init(0);
+var max_clients: u32 = undefined;
+var accept_timeout: c_long = undefined;
+var read_timeout: c_int = undefined;
 
 fn handleSignal(_: posix.SIG) callconv(.c) void {
     running.store(false, .release);
@@ -39,7 +46,9 @@ pub fn main(init: process.Init) !void {
     const allocator = gpa.allocator();
     defer {
         const deinit_status = gpa.deinit();
-        if (deinit_status == .leak) @panic("TEST FAIL");
+        if (deinit_status == .leak) {
+            log.err("memory leak detected", .{});
+        }
     }
 
     const pg_user = init.environ_map.get("PGUSER") orelse
@@ -99,7 +108,7 @@ pub fn main(init: process.Init) !void {
     else
         "127.0.0.0";
 
-    const host = try allocator.dupe(u8, raw_host);
+    const host = try allocator.dupeZ(u8, raw_host);
     defer allocator.free(host);
     lua.pop(1);
 
@@ -125,6 +134,38 @@ pub fn main(init: process.Init) !void {
     else
         255;
     const manage_channel_rank: u8 = @intCast(raw_manage_channel_rank);
+    lua.pop(1);
+
+    _ = lua.getField(-1, "max_clients");
+    max_clients = if (lua.isInteger(-1))
+        lua_handler.pullUInt(lua, -1)
+    else
+        1;
+    lua.pop(1);
+
+    _ = lua.getField(-1, "accept_timeout");
+    const raw_accept_timeout = if (lua.isInteger(-1))
+        lua_handler.pullUInt(lua, -1)
+    else
+        30;
+    accept_timeout = @intCast(raw_accept_timeout);
+    lua.pop(1);
+
+    _ = lua.getField(-1, "read_timeout");
+    const raw_read_timeout = if (lua.isInteger(-1))
+        lua_handler.pullUInt(lua, -1)
+    else
+        50;
+    read_timeout = @intCast(raw_read_timeout);
+    lua.pop(1);
+
+    _ = lua.getField(-1, "title");
+    const raw_title = if (lua.isString(-1))
+        lua_handler.pullString(lua, -1)
+    else
+        "chat server";
+
+    try server.setTitle(raw_title);
     lua.pop(1);
 
     server.manage_whitelist_rank = manage_whitelist_rank;
@@ -159,21 +200,44 @@ pub fn main(init: process.Init) !void {
         }
         log.debug("[CONNECT] client connection accepted", .{});
 
-        const thread = std.Thread.spawn(.{ .stack_size = 512 * 1024 }, handleClient, .{
+        if (active_clients.load(.acquire) >= max_clients) {
+            log.warn("[FULL] maximum client count reached: {d}", .{max_clients});
+            ssh.ssh_disconnect(session);
+            ssh.ssh_free(session);
+            continue;
+        }
+
+        var timeout: c_long = accept_timeout;
+        _ = ssh.ssh_options_set(session, ssh.SSH_OPTIONS_TIMEOUT, &timeout);
+
+        _ = active_clients.fetchAdd(1, .acq_rel);
+        const thread = std.Thread.spawn(.{ .stack_size = 512 * 1024 }, clientThread, .{
             allocator,
             io,
             &server,
             session,
         }) catch |err| {
+            _ = active_clients.fetchSub(1, .acq_rel);
             log.err("failed to spawn thread: {}", .{err});
             ssh.ssh_disconnect(session);
             ssh.ssh_free(session);
             continue;
         };
 
-        thread.join();
+        thread.detach();
+    }
+
+    while (active_clients.load(.acquire) > 0) {
+        io.sleep(.fromMilliseconds(10), .awake) catch {};
     }
     log.info("[STOP] server closed successfully", .{});
+}
+
+fn clientThread(allocator: mem.Allocator, io: Io, server: *server_handler.Server, session: ssh.ssh_session) void {
+    defer _ = active_clients.fetchSub(1, .acq_rel);
+    handleClient(allocator, io, server, session) catch |err| {
+        log.debug("[SESSION] ended with: {}", .{err});
+    };
 }
 
 fn handleClient(allocator: mem.Allocator, io: Io, server: *server_handler.Server, session: ssh.ssh_session) !void {
@@ -194,6 +258,7 @@ fn handleClient(allocator: mem.Allocator, io: Io, server: *server_handler.Server
     var fingerprint: [32]u8 = undefined;
     var auth_success = false;
     var client_id: u32 = 0;
+    var attempts: u8 = 0;
     while (!auth_success) {
         const msg = ssh.ssh_message_get(session) orelse break;
         defer ssh.ssh_message_free(msg);
@@ -203,6 +268,9 @@ fn handleClient(allocator: mem.Allocator, io: Io, server: *server_handler.Server
                 const u = std.mem.span(c_username);
                 const u_len = @min(u.len, u_buf.len);
                 @memcpy(u_buf[0..u_len], u[0..u_len]);
+                for (u_buf[0..u_len]) |*b| if (b.* < 0x20 or b.* == 0x7f) {
+                    b.* = '?';
+                };
                 username = u_buf[0..u_len];
             }
 
@@ -215,39 +283,46 @@ fn handleClient(allocator: mem.Allocator, io: Io, server: *server_handler.Server
             }
 
             if (auth_subtype == ssh.SSH_AUTH_METHOD_PUBLICKEY) {
+                attempts += 1;
+                if (attempts > max_auth_attempts) return error.TooManyAttempts;
+
                 const pubkey = ssh.ssh_message_auth_pubkey(msg);
-
-                if (pubkey != null) {
-                    var hash_ptr: [*c]u8 = undefined;
-                    var hash_len: usize = 0;
-
-                    if (ssh.ssh_get_publickey_hash(pubkey, ssh.SSH_PUBLICKEY_HASH_SHA256, &hash_ptr, &hash_len) == ssh.SSH_OK) {
-                        defer ssh.ssh_clean_pubkey_hash(&hash_ptr);
-                        @memcpy(&fingerprint, hash_ptr[0..32]);
-                    }
-
-                    if (try server.authenticate(fingerprint)) |id| {
-                        client_id = id;
-                    } else {
-                        log.warn("[REJECT] client is not whitelisted: fingerprint=\"{x}\"", .{fingerprint});
-                        return error.ClientRejected;
-                    }
-
-                    const state = ssh.ssh_message_auth_publickey_state(msg);
-                    if (state == ssh.SSH_PUBLICKEY_STATE_NONE) {
-                        _ = ssh.ssh_message_auth_reply_pk_ok_simple(msg);
-                    } else if (state == ssh.SSH_PUBLICKEY_STATE_VALID) {
-                        _ = ssh.ssh_message_auth_reply_success(msg, 0);
-                        auth_success = true;
-                    } else {
-                        _ = ssh.ssh_message_reply_default(msg);
-                    }
+                if (pubkey == null) {
+                    _ = ssh.ssh_message_reply_default(msg);
                     continue;
                 }
+
+                var hash_ptr: [*c]u8 = undefined;
+                var hash_len: usize = 0;
+                if (ssh.ssh_get_publickey_hash(pubkey, ssh.SSH_PUBLICKEY_HASH_SHA256, &hash_ptr, &hash_len) != ssh.SSH_OK or hash_len != 32) {
+                    _ = ssh.ssh_message_reply_default(msg);
+                    continue;
+                }
+
+                defer ssh.ssh_clean_pubkey_hash(&hash_ptr);
+                @memcpy(&fingerprint, hash_ptr[0..32]);
+
+                if (try server.authenticate(fingerprint)) |id| {
+                    client_id = id;
+                } else {
+                    log.warn("[REJECT] client is not whitelisted: fingerprint=\"{x}\"", .{fingerprint});
+                    return error.ClientRejected;
+                }
+
+                const state = ssh.ssh_message_auth_publickey_state(msg);
+                if (state == ssh.SSH_PUBLICKEY_STATE_NONE) {
+                    _ = ssh.ssh_message_auth_reply_pk_ok_simple(msg);
+                } else if (state == ssh.SSH_PUBLICKEY_STATE_VALID) {
+                    _ = ssh.ssh_message_auth_reply_success(msg, 0);
+                    auth_success = true;
+                } else {
+                    _ = ssh.ssh_message_reply_default(msg);
+                }
+                continue;
             }
 
-            _ = ssh.ssh_message_auth_reply_success(msg, 0);
-            auth_success = true;
+            _ = ssh.ssh_message_auth_set_methods(msg, ssh.SSH_AUTH_METHOD_PUBLICKEY);
+            _ = ssh.ssh_message_reply_default(msg);
             continue;
         }
         _ = ssh.ssh_message_reply_default(msg);
@@ -292,7 +367,7 @@ fn handleClient(allocator: mem.Allocator, io: Io, server: *server_handler.Server
         }
     }
 
-    try server.addClient(client_id, username, fingerprint);
+    const client = try server.addClient(client_id, username, fingerprint);
     defer server.removeClient(client_id);
 
     log.info("[ACCEPT] id={d} username=\"{s}\" fingerprint=\"{x}\"", .{ client_id, username, fingerprint });
@@ -302,29 +377,50 @@ fn handleClient(allocator: mem.Allocator, io: Io, server: *server_handler.Server
     var command_line: std.ArrayList(u8) = .empty;
     defer command_line.deinit(allocator);
 
+    var esc: enum { none, esc, csi } = .none;
     var on = true;
-    while (running.load(.acquire) and on) {
-        const bytes_read = ssh.channel_read_nonblocking(channel, &input_buf, @intCast(input_buf.len), 0);
-        if (bytes_read < 0) {
-            break;
-        } else if (bytes_read == 0) {
-            if (ssh.ssh_channel_is_eof(channel) != 0) {
-                break;
-            }
+    while (running.load(.acquire) and on and !client.kicked.load(.acquire)) {
+        try flush(server, channel, client_id);
+
+        const bytes_read = ssh.ssh_channel_read_timeout(channel, &input_buf, @intCast(input_buf.len), 0, read_timeout);
+        if (bytes_read == ssh.SSH_ERROR) break;
+        if (bytes_read <= 0) {
+            if (bytes_read == 0 and ssh.ssh_channel_is_eof(channel) != 0) break;
             continue;
         }
 
         const input = input_buf[0..@intCast(bytes_read)];
 
         for (input) |ch| {
+            switch (esc) {
+                .esc => {
+                    esc = if (ch == '[') .csi else .none;
+                    continue;
+                },
+                .csi => {
+                    if (ch >= 0x40 and ch <= 0x7e) esc = .none;
+                    continue;
+                },
+                .none => {},
+            }
             switch (ch) {
+                0x1b => {
+                    esc = .esc;
+                    continue;
+                },
+                0x03, 0x04 => on = false,
                 '\n', '\r' => {
                     try ssh_handler.channelWriteAll(channel, "\r\n");
-                    if (try commands.runCommand(allocator, io, client_id, server, command_line.items)) on = false;
+                    const quit = commands.runCommand(allocator, io, client_id, server, command_line.items) catch |err| blk: {
+                        log.err("command failed: {}", .{err});
+                        server.sendTo(client_id, .StdErr, "Internal error\r\n");
+                        break :blk false;
+                    };
+                    if (quit) on = false;
                     command_line.clearRetainingCapacity();
                 },
                 '\x08', '\x7f' => _ = command_line.pop(),
-                else => {
+                else => if (ch >= 0x20 and command_line.items.len < 512) {
                     try command_line.append(allocator, ch);
                 },
             }
