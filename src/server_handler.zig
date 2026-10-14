@@ -98,7 +98,7 @@ pub const Server = struct {
     pub fn addClient(self: *Self, client_id: u32, name: []const u8, fingerprint: [32]u8) !void {
         const client = try self.allocator.create(Client);
         errdefer self.allocator.destroy(client);
-        client.* = .{ .name = name, .fingerprint = &fingerprint };
+        client.* = .{ .name = name, .fingerprint = fingerprint };
 
         self.state_mutex.lockUncancelable(self.io);
         defer self.state_mutex.unlock(self.io);
@@ -205,7 +205,7 @@ pub const OutMsg = struct {
 
 pub const Client = struct {
     name: []const u8,
-    fingerprint: []const u8,
+    fingerprint: [32]u8,
     outbox: std.ArrayListUnmanaged(OutMsg) = .empty,
     channel: ?Channel = null,
     cols: u16 = 80,
