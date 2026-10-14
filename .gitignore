@@ -3,3 +3,4 @@
 /zig-pkg
 .pg_data
 .pg_socket
+.pg_log
