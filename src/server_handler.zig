@@ -250,6 +250,13 @@ pub const Server = struct {
         }
     }
 
+    pub fn broadcastLocked(self: *Server, stream: Stream, bytes: []const u8) void {
+        var it = self.clients.valueIterator();
+        while (it.next()) |client| {
+            self.sendLocked(client.*, stream, bytes);
+        }
+    }
+
     pub fn takeOutbox(self: *Server, client_id: u32) ?std.ArrayListUnmanaged(OutMsg) {
         self.state_mutex.lockUncancelable(self.io);
         defer self.state_mutex.unlock(self.io);
