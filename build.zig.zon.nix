@@ -108,7 +108,7 @@ linkFarm "zig-packages" [
     path = fetchzip {
       url = "https://codeload.github.com/natecraddock/ziglua/tar.gz/refs/tags/0.7.0";
       hash = "sha256-GaPEC5oCLmQ0G2QvCxRH/84/6LeUyinLCCN+JQ/uDPw=";
-      ext = "tar.gz";
+      extension = "tar.gz";
     };
   }
 ]
