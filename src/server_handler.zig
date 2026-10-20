@@ -103,12 +103,12 @@ pub const Server = struct {
         try self.*.commands.put(self.allocator, command_name, lua_callback);
     }
 
-    pub fn addClient(self: *Self, client_id: u32, name: []const u8, fingerprint: [32]u8) !*Client {
+    pub fn addClient(self: *Self, client_id: u32, name: []const u8, fingerprint: [32]u8, rows: u16, cols: u16) !*Client {
         const name_copy = try self.allocator.dupe(u8, name);
         errdefer self.allocator.free(name_copy);
         const client = try self.allocator.create(Client);
         errdefer self.allocator.destroy(client);
-        client.* = .{ .name = name_copy, .fingerprint = fingerprint };
+        client.* = .{ .name = name_copy, .fingerprint = fingerprint, .rows = rows, .cols = cols };
 
         self.state_mutex.lockUncancelable(self.io);
         defer self.state_mutex.unlock(self.io);
@@ -284,8 +284,8 @@ pub const Client = struct {
     outbox: std.ArrayListUnmanaged(OutMsg) = .empty,
     channel: ?*Channel = null,
     kicked: atomic.Value(bool) = .init(false),
-    cols: u16 = 80,
     rows: u16 = 24,
+    cols: u16 = 80,
 
     const Self = @This();
 

@@ -11,6 +11,7 @@ const commands = @import("commands.zig");
 const server_handler = @import("server_handler.zig");
 const ssh_handler = @import("ssh_handler.zig");
 const lua_handler = @import("lua_handler.zig");
+const client_renderer = @import("client_renderer.zig");
 const tools = @import("tools.zig");
 
 const ssh = @import("ssh");
@@ -350,15 +351,22 @@ fn handleClient(allocator: mem.Allocator, io: Io, server: *server_handler.Server
 
     try ssh_handler.channelPrint(allocator, channel, "Welcome {s}, type '/help' for command that can be used\r\n", .{username});
 
+    var cols: u16 = 80;
+    var rows: u16 = 24;
+
     while (true) {
         const req_msg = ssh.ssh_message_get(session) orelse break;
         defer ssh.ssh_message_free(req_msg);
 
         if (ssh.ssh_message_type(req_msg) == ssh.SSH_REQUEST_CHANNEL) {
             const subtype = ssh.ssh_message_subtype(req_msg);
-            if (subtype == ssh.SSH_CHANNEL_REQUEST_PTY or subtype == ssh.SSH_CHANNEL_REQUEST_SHELL) {
+            if (subtype == ssh.SSH_CHANNEL_REQUEST_PTY) {
+                cols = std.math.cast(u16, ssh.ssh_message_channel_request_pty_width(req_msg)) orelse 80;
+                rows = std.math.cast(u16, ssh.ssh_message_channel_request_pty_height(req_msg)) orelse 24;
                 _ = ssh.ssh_message_channel_request_reply_success(req_msg);
-                if (subtype == ssh.SSH_CHANNEL_REQUEST_SHELL) break;
+            } else if (subtype == ssh.SSH_CHANNEL_REQUEST_SHELL) {
+                _ = ssh.ssh_message_channel_request_reply_success(req_msg);
+                break;
             } else {
                 _ = ssh.ssh_message_reply_default(req_msg);
             }
@@ -367,8 +375,15 @@ fn handleClient(allocator: mem.Allocator, io: Io, server: *server_handler.Server
         }
     }
 
-    const client = try server.addClient(client_id, username, fingerprint);
+    const client = try server.addClient(client_id, username, fingerprint, rows, cols);
     defer server.removeClient(client_id);
+
+    var chan_cb: ssh.struct_ssh_channel_callbacks_struct = std.mem.zeroes(ssh.struct_ssh_channel_callbacks_struct);
+    chan_cb.size = @sizeOf(@TypeOf(chan_cb));
+    chan_cb.userdata = client;
+    chan_cb.channel_pty_window_change_function = onWindowChange;
+    const rc = ssh.ssh_set_channel_callbacks(channel, &chan_cb);
+    log.debug("callback rc={d} size={d}", .{ rc, chan_cb.size });
 
     log.info("[ACCEPT] id={d} username=\"{s}\" fingerprint=\"{x}\"", .{ client_id, username, fingerprint });
 
@@ -378,9 +393,10 @@ fn handleClient(allocator: mem.Allocator, io: Io, server: *server_handler.Server
     defer command_line.deinit(allocator);
 
     var esc: enum { none, esc, csi } = .none;
-    var on = true;
-    while (running.load(.acquire) and on and !client.kicked.load(.acquire)) {
-        try flush(server, channel, client_id);
+    while (running.load(.acquire) and !client.kicked.load(.acquire)) {
+        if (try flush(server, channel, client_id)) {
+            try client_renderer.displayCommandLine(channel, client.rows, command_line.items);
+        }
 
         const bytes_read = ssh.ssh_channel_read_timeout(channel, &input_buf, @intCast(input_buf.len), 0, read_timeout);
         if (bytes_read == ssh.SSH_ERROR) break;
@@ -408,15 +424,14 @@ fn handleClient(allocator: mem.Allocator, io: Io, server: *server_handler.Server
                     esc = .esc;
                     continue;
                 },
-                0x03, 0x04 => on = false,
+                0x03, 0x04 => client.kicked.store(true, .release),
                 '\n', '\r' => {
-                    try ssh_handler.channelWriteAll(channel, "\r\n");
                     const quit = commands.runCommand(allocator, io, client_id, server, command_line.items) catch |err| blk: {
                         log.err("command failed: {}", .{err});
                         server.sendTo(client_id, .StdErr, "Internal error\r\n");
                         break :blk false;
                     };
-                    if (quit) on = false;
+                    if (quit) client.kicked.store(true, .release);
                     command_line.clearRetainingCapacity();
                 },
                 '\x08', '\x7f' => _ = command_line.pop(),
@@ -424,18 +439,16 @@ fn handleClient(allocator: mem.Allocator, io: Io, server: *server_handler.Server
                     try command_line.append(allocator, ch);
                 },
             }
-            try ssh_handler.channelPrint(allocator, channel, "> {s}\x1b[K\r", .{command_line.items});
+            try client_renderer.displayCommandLine(channel, client.rows, command_line.items);
         }
-
-        try flush(server, channel, client_id);
     }
 
     try ssh_handler.channelWriteAll(channel, "disconnecting...\r\n");
     log.info("[DISCONNECT] id={d} username=\"{s}\" fingerprint=\"{x}\"", .{ client_id, username, fingerprint });
 }
 
-fn flush(server: *server_handler.Server, channel: ssh.ssh_channel, client_id: u32) !void {
-    var pending = server.takeOutbox(client_id) orelse return;
+fn flush(server: *server_handler.Server, channel: ssh.ssh_channel, client_id: u32) !bool {
+    var pending = server.takeOutbox(client_id) orelse return false;
     defer {
         for (pending.items) |m| server.allocator.free(m.bytes);
         pending.deinit(server.allocator);
@@ -444,4 +457,20 @@ fn flush(server: *server_handler.Server, channel: ssh.ssh_channel, client_id: u3
         .StdOut => try ssh_handler.channelWriteAll(channel, m.bytes),
         .StdErr => try ssh_handler.channelWriteAllErr(channel, m.bytes),
     };
+
+    if (pending.items.len > 0) return true;
+    return false;
+}
+
+fn onWindowChange(_: ssh.ssh_session, _: ssh.ssh_channel, width: c_int, height: c_int, _: c_int, _: c_int, userdata: ?*anyopaque) callconv(.c) c_int {
+    const client: *server_handler.Client = @ptrCast(@alignCast(userdata.?));
+    client.cols = clampDim(width, client.cols);
+    client.rows = clampDim(height, client.rows);
+    log.debug("window change {d}x{d}", .{ width, height });
+    return 0;
+}
+
+fn clampDim(v: anytype, default: u16) u16 {
+    const n = std.math.cast(u16, v) orelse return default;
+    return if (n == 0) default else n;
 }
